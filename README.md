@@ -29,6 +29,11 @@ private documents, credentials, or sensitive personal information.
 If you need offline speech, look at Piper/Mimic3-based tools such as Voluble or
 VoxFree instead.
 
+## Limitations
+
+- **Single Language/Voice:** The tool uses a single voice configured in `~/.config/read-selection-tts/config`. Reading text in a language different from the configured voice will result in unnatural pronunciation (a strong accent) or playback failure.
+- **Latency on Long Selections:** Since `edge-tts` must generate the entire audio file before `mpv` starts playback, very long selections may take a few seconds before the audio begins.
+
 ## Requirements
 
 Tested on Ubuntu GNOME Wayland.
@@ -138,11 +143,6 @@ mpv "$tmp"
 If `edge-tts` is not found from a GNOME shortcut but works in your terminal,
 ensure `~/.local/bin` is on `PATH`. The installed scripts set a conservative
 `PATH`, so this should normally work.
-
-## Demo
-
-A short demo GIF or video is planned. The most useful demo is: select terminal
-or document text, press `Ctrl+Alt+R`, then pause/continue with the shortcuts.
 
 ## Alternatives
 
