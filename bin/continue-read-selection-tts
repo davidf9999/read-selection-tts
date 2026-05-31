@@ -1,8 +1,18 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-sock="${READ_SELECTION_TTS_SOCKET:-/tmp/read-selection-tts-mpv.sock}"
-log="${READ_SELECTION_TTS_LOG:-/tmp/read-selection-tts.log}"
+config="${READ_SELECTION_TTS_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/read-selection-tts/config}"
+if [ -r "$config" ]; then
+  # shellcheck disable=SC1090
+  . "$config"
+fi
+
+runtime_base="${READ_SELECTION_TTS_RUNTIME_DIR:-${XDG_RUNTIME_DIR:-/tmp}/read-selection-tts}"
+sock="${READ_SELECTION_TTS_SOCKET:-$runtime_base/mpv.sock}"
+log="${READ_SELECTION_TTS_LOG:-$runtime_base/read-selection-tts.log}"
+
+mkdir -p "$runtime_base"
+chmod 700 "$runtime_base"
 
 {
   date

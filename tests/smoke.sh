@@ -10,17 +10,112 @@ done
 
 grep -q "edge-tts" bin/read-selection-tts
 grep -q "input-ipc-server" bin/read-selection-tts
+grep -q "READ_SELECTION_TTS_CONFIG" bin/read-selection-tts
+grep -q "XDG_RUNTIME_DIR.*read-selection-tts" bin/read-selection-tts
 grep -q "set_property.*pause.*true" bin/pause-read-selection-tts
 grep -q "set_property.*pause.*false" bin/continue-read-selection-tts
+if grep -R "pkill -f" bin install.sh uninstall.sh >/dev/null; then
+  echo "pkill -f must not be used for mpv cleanup" >&2
+  exit 1
+fi
+if grep -RE "/tmp/read-selection-tts(\.|-)" bin install.sh uninstall.sh README.md SECURITY.md docs skills >/dev/null; then
+  echo "fixed /tmp read-selection file paths must not be documented or used" >&2
+  exit 1
+fi
 
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
-PREFIX="$tmp/prefix" ./install.sh --no-shortcuts
+stubdir="$tmp/stubs"
+mkdir -p "$stubdir"
+
+for cmd in wl-paste edge-tts mpv nc; do
+  cat >"$stubdir/$cmd" <<'STUB'
+#!/usr/bin/env bash
+exit 0
+STUB
+  chmod +x "$stubdir/$cmd"
+done
+
+cat >"$stubdir/gsettings" <<'STUB'
+#!/usr/bin/env bash
+set -euo pipefail
+state="${GSETTINGS_MOCK_STATE:?}"
+log="${GSETTINGS_MOCK_LOG:?}"
+mkdir -p "$state"
+printf '%s\n' "$*" >>"$log"
+key() {
+  printf '%s' "$1|$2" | base64 | tr '/+=' '___'
+}
+if [ "$1" = "get" ]; then
+  schema="$2"
+  name="$3"
+  if [ "$schema" = "org.gnome.settings-daemon.plugins.media-keys" ] && [ "$name" = "custom-keybindings" ]; then
+    cat "$state/custom-keybindings" 2>/dev/null || printf '@as []\n'
+    exit 0
+  fi
+  file="$state/$(key "$schema" "$name")"
+  cat "$file" 2>/dev/null || printf "''\n"
+  exit 0
+fi
+if [ "$1" = "set" ]; then
+  schema="$2"
+  name="$3"
+  shift 3
+  value="$*"
+  if [ "$schema" = "org.gnome.settings-daemon.plugins.media-keys" ] && [ "$name" = "custom-keybindings" ]; then
+    printf '%s\n' "$value" >"$state/custom-keybindings"
+    exit 0
+  fi
+  file="$state/$(key "$schema" "$name")"
+  python3 - "$value" >"$file" <<'INNERPY'
+import sys
+print(repr(sys.argv[1]))
+INNERPY
+  exit 0
+fi
+if [ "$1" = "reset" ]; then
+  schema="$2"
+  name="$3"
+  rm -f "$state/$(key "$schema" "$name")"
+  exit 0
+fi
+exit 2
+STUB
+chmod +x "$stubdir/gsettings"
+
+PATH="$stubdir:$PATH" PREFIX="$tmp/prefix" XDG_CONFIG_HOME="$tmp/config" ./install.sh --no-shortcuts
 test -x "$tmp/prefix/bin/read-selection-tts"
 test -x "$tmp/prefix/bin/pause-read-selection-tts"
 test -x "$tmp/prefix/bin/continue-read-selection-tts"
 test -x "$tmp/prefix/bin/stop-read-selection-tts"
-PREFIX="$tmp/prefix" ./uninstall.sh
+test -f "$tmp/config/read-selection-tts/config"
+
+GSETTINGS_MOCK_STATE="$tmp/gsettings-state" GSETTINGS_MOCK_LOG="$tmp/gsettings.log" \
+  PATH="$stubdir:$PATH" PREFIX="$tmp/prefix" XDG_CONFIG_HOME="$tmp/config" \
+  READ_SELECTION_TTS_VOICE="en-GB-SoniaNeural" READ_SELECTION_TTS_STOP_BINDING="<Control><Alt>x" ./install.sh
+
+grep -q "READ_SELECTION_TTS_VOICE=en-GB-SoniaNeural" "$tmp/config/read-selection-tts/config"
+grep -q "read-selection-tts/" "$tmp/gsettings-state/custom-keybindings"
+grep -q "stop-read-selection-tts/" "$tmp/gsettings-state/custom-keybindings"
+
+GSETTINGS_MOCK_STATE="$tmp/gsettings-state" GSETTINGS_MOCK_LOG="$tmp/gsettings.log" \
+  PATH="$stubdir:$PATH" PREFIX="$tmp/prefix" XDG_CONFIG_HOME="$tmp/config" ./install.sh
+if grep -q "stop-read-selection-tts/" "$tmp/gsettings-state/custom-keybindings"; then
+  echo "stale stop shortcut was not removed on reinstall without stop binding" >&2
+  exit 1
+fi
+
+foreign="$tmp/gsettings-foreign"
+mkdir -p "$foreign"
+printf "['/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/read-selection-tts/']\n" >"$foreign/custom-keybindings"
+foreign_key="$(printf '%s' "org.gnome.settings-daemon.plugins.media-keys.custom-keybinding:/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/read-selection-tts/|command" | base64 | tr '/+=' '___')"
+printf "'/usr/bin/foreign'\n" >"$foreign/$foreign_key"
+GSETTINGS_MOCK_STATE="$foreign" GSETTINGS_MOCK_LOG="$tmp/gsettings-foreign.log" \
+  PATH="$stubdir:$PATH" PREFIX="$tmp/prefix" XDG_CONFIG_HOME="$tmp/config" ./uninstall.sh
+
+grep -q "read-selection-tts/" "$foreign/custom-keybindings"
+test -f "$foreign/$foreign_key"
+
 test ! -e "$tmp/prefix/bin/read-selection-tts"
 
 echo "smoke tests passed"

@@ -3,23 +3,47 @@ set -euo pipefail
 
 export PATH="${HOME}/.local/bin:/usr/local/bin:/usr/bin:/bin:${PATH:-}"
 
-voice="${READ_SELECTION_TTS_VOICE:-en-US-AriaNeural}"
-media="${READ_SELECTION_TTS_MEDIA:-/tmp/read-selection-tts.mp3}"
-sock="${READ_SELECTION_TTS_SOCKET:-/tmp/read-selection-tts-mpv.sock}"
-log="${READ_SELECTION_TTS_LOG:-/tmp/read-selection-tts.log}"
+config="${READ_SELECTION_TTS_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/read-selection-tts/config}"
+if [ -r "$config" ]; then
+  # shellcheck disable=SC1090
+  . "$config"
+fi
 
-if ! command -v wl-paste >/dev/null 2>&1; then
-  echo "read-selection-tts: wl-paste is required" >&2
-  exit 127
-fi
-if ! command -v edge-tts >/dev/null 2>&1; then
-  echo "read-selection-tts: edge-tts is required" >&2
-  exit 127
-fi
-if ! command -v mpv >/dev/null 2>&1; then
-  echo "read-selection-tts: mpv is required" >&2
-  exit 127
-fi
+voice="${READ_SELECTION_TTS_VOICE:-en-US-AriaNeural}"
+runtime_base="${READ_SELECTION_TTS_RUNTIME_DIR:-${XDG_RUNTIME_DIR:-/tmp}/read-selection-tts}"
+media="${READ_SELECTION_TTS_MEDIA:-$runtime_base/read-selection.mp3}"
+sock="${READ_SELECTION_TTS_SOCKET:-$runtime_base/mpv.sock}"
+pidfile="${READ_SELECTION_TTS_PIDFILE:-$runtime_base/mpv.pid}"
+log="${READ_SELECTION_TTS_LOG:-$runtime_base/read-selection-tts.log}"
+
+need() {
+  if ! command -v "$1" >/dev/null 2>&1; then
+    echo "read-selection-tts: $1 is required" >&2
+    exit 127
+  fi
+}
+
+need wl-paste
+need edge-tts
+need mpv
+
+mkdir -p "$runtime_base"
+chmod 700 "$runtime_base"
+
+stop_existing() {
+  if [ -s "$pidfile" ]; then
+    old_pid="$(cat "$pidfile" 2>/dev/null || true)"
+    if [ -n "${old_pid:-}" ] && kill -0 "$old_pid" 2>/dev/null; then
+      kill -TERM "$old_pid" 2>/dev/null || true
+      for _ in 1 2 3 4 5; do
+        kill -0 "$old_pid" 2>/dev/null || break
+        sleep 0.1
+      done
+      kill -KILL "$old_pid" 2>/dev/null || true
+    fi
+  fi
+  rm -f "$pidfile" "$sock"
+}
 
 {
   date
@@ -33,8 +57,14 @@ if [ -z "$text" ]; then
 fi
 
 echo "chars=${#text}" >>"$log"
-pkill -TERM -f "mpv.*${sock}" 2>/dev/null || true
-rm -f "$media" "$sock"
+stop_existing
+rm -f "$media"
 
 edge-tts --voice "$voice" --text "$text" --write-media "$media" >>"$log" 2>&1
-exec mpv --no-video --really-quiet --input-ipc-server="$sock" "$media" >>"$log" 2>&1
+mpv --no-video --really-quiet --input-ipc-server="$sock" "$media" >>"$log" 2>&1 &
+mpv_pid=$!
+printf '%s\n' "$mpv_pid" >"$pidfile"
+wait "$mpv_pid"
+status=$?
+rm -f "$pidfile" "$sock"
+exit "$status"

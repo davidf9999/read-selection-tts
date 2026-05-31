@@ -17,7 +17,9 @@ org.gnome.settings-daemon.plugins.media-keys custom-keybindings
 ```
 
 The installer appends these shortcut paths instead of replacing unrelated
-custom shortcuts.
+custom shortcuts. If one of this project's fixed shortcut paths already belongs
+to a different command, the installer leaves that path unchanged and reports it.
+Uninstall only removes shortcut entries whose command points at this install.
 
 ## Current Limitation
 

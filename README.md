@@ -44,7 +44,7 @@ Runtime dependencies:
 Install dependencies on Ubuntu:
 
 ```bash
-sudo apt install -y wl-clipboard mpv netcat-openbsd pipx
+sudo apt install -y wl-clipboard mpv netcat-openbsd pipx python3
 pipx install edge-tts
 ```
 
@@ -64,7 +64,7 @@ Default shortcuts:
 - `Ctrl+Alt+S`: pause
 - `Ctrl+Alt+C`: continue
 
-The installer preserves existing GNOME custom shortcuts and appends its own.
+The installer preserves existing GNOME custom shortcuts, appends its own, and leaves shortcut paths alone if they already belong to another command.
 
 ## Use
 
@@ -87,6 +87,8 @@ Choose a different voice:
 ```bash
 READ_SELECTION_TTS_VOICE=en-GB-SoniaNeural ./install.sh
 ```
+
+The selected voice is persisted in `~/.config/read-selection-tts/config`, so GNOME shortcuts use it after the installing terminal closes.
 
 Override shortcut bindings:
 
@@ -111,7 +113,7 @@ edge-tts --list-voices | less
 Check the log:
 
 ```bash
-cat /tmp/read-selection-tts.log
+cat "${XDG_RUNTIME_DIR:-/tmp}/read-selection-tts/read-selection-tts.log"
 ```
 
 If the shortcut fires but no audio plays, verify:
@@ -119,8 +121,9 @@ If the shortcut fires but no audio plays, verify:
 ```bash
 command -v wl-paste edge-tts mpv nc
 wl-paste --primary
-edge-tts --voice en-US-AriaNeural --text "test" --write-media /tmp/test.mp3
-mpv /tmp/test.mp3
+tmp="$(mktemp --suffix=.mp3)"
+edge-tts --voice en-US-AriaNeural --text "test" --write-media "$tmp"
+mpv "$tmp"
 ```
 
 If `edge-tts` is not found from a GNOME shortcut but works in your terminal,

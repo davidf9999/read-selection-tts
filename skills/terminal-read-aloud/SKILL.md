@@ -19,7 +19,7 @@ on Ubuntu/GNOME/Wayland with good voice quality and simple keyboard shortcuts.
 2. Ensure dependencies are installed:
 
    ```bash
-   sudo apt install -y wl-clipboard mpv netcat-openbsd pipx
+   sudo apt install -y wl-clipboard mpv netcat-openbsd pipx python3
    pipx install edge-tts
    ```
 
@@ -40,7 +40,7 @@ on Ubuntu/GNOME/Wayland with good voice quality and simple keyboard shortcuts.
 Check:
 
 ```bash
-cat /tmp/read-selection-tts.log
+cat "${XDG_RUNTIME_DIR:-/tmp}/read-selection-tts/read-selection-tts.log"
 wl-paste --primary
 command -v edge-tts mpv nc wl-paste
 ```

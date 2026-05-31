@@ -3,6 +3,8 @@ set -euo pipefail
 
 prefix="${PREFIX:-$HOME/.local}"
 bindir="$prefix/bin"
+config_dir="${XDG_CONFIG_HOME:-$HOME/.config}/read-selection-tts"
+config_file="${READ_SELECTION_TTS_CONFIG:-$config_dir/config}"
 voice="${READ_SELECTION_TTS_VOICE:-en-US-AriaNeural}"
 read_binding="${READ_SELECTION_TTS_READ_BINDING:-<Control><Alt>r}"
 pause_binding="${READ_SELECTION_TTS_PAUSE_BINDING:-<Control><Alt>s}"
@@ -48,6 +50,7 @@ need wl-paste
 need edge-tts
 need mpv
 need nc
+need python3
 if [ "$install_shortcuts" -eq 1 ]; then
   need gsettings
 fi
@@ -55,7 +58,7 @@ if [ "$missing" -ne 0 ]; then
   cat >&2 <<'MSG'
 
 Install dependencies on Ubuntu/GNOME/Wayland:
-  sudo apt install -y wl-clipboard mpv netcat-openbsd pipx
+  sudo apt install -y wl-clipboard mpv netcat-openbsd pipx python3
   pipx install edge-tts
 
 Then rerun ./install.sh.
@@ -63,11 +66,15 @@ MSG
   exit 1
 fi
 
-mkdir -p "$bindir"
+config_parent="$(dirname "$config_file")"
+mkdir -p "$bindir" "$config_parent"
+chmod 700 "$config_parent"
 install -m 0755 bin/read-selection-tts "$bindir/read-selection-tts"
 install -m 0755 bin/pause-read-selection-tts "$bindir/pause-read-selection-tts"
 install -m 0755 bin/continue-read-selection-tts "$bindir/continue-read-selection-tts"
 install -m 0755 bin/stop-read-selection-tts "$bindir/stop-read-selection-tts"
+install -m 0600 /dev/null "$config_file"
+printf 'READ_SELECTION_TTS_VOICE=%q\n' "$voice" >"$config_file"
 
 if [ "$install_shortcuts" -eq 1 ]; then
   base="/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings"
@@ -75,45 +82,82 @@ if [ "$install_shortcuts" -eq 1 ]; then
   pause_path="$base/pause-read-selection-tts/"
   continue_path="$base/continue-read-selection-tts/"
   stop_path="$base/stop-read-selection-tts/"
-
-  current="$(gsettings get org.gnome.settings-daemon.plugins.media-keys custom-keybindings)"
-  new_paths="$(paths="$current" READ_PATH="$read_path" PAUSE_PATH="$pause_path" CONTINUE_PATH="$continue_path" STOP_PATH="$stop_path" STOP_BINDING="$stop_binding" python3 - <<'PY'
-import ast, os
-raw = os.environ["paths"]
-if raw.startswith("@as "):
-    items = []
-else:
-    items = ast.literal_eval(raw)
-for key in ("READ_PATH", "PAUSE_PATH", "CONTINUE_PATH"):
-    value = os.environ[key]
-    if value not in items:
-        items.append(value)
-if os.environ.get("STOP_BINDING"):
-    value = os.environ["STOP_PATH"]
-    if value not in items:
-        items.append(value)
-print("[" + ", ".join(repr(x) for x in items) + "]")
-PY
-)"
-  gsettings set org.gnome.settings-daemon.plugins.media-keys custom-keybindings "$new_paths"
-
   schema="org.gnome.settings-daemon.plugins.media-keys.custom-keybinding:"
-  gsettings set "${schema}${read_path}" name "Read selected text aloud"
-  gsettings set "${schema}${read_path}" command "$bindir/read-selection-tts"
-  gsettings set "${schema}${read_path}" binding "$read_binding"
 
-  gsettings set "${schema}${pause_path}" name "Pause read aloud"
-  gsettings set "${schema}${pause_path}" command "$bindir/pause-read-selection-tts"
-  gsettings set "${schema}${pause_path}" binding "$pause_binding"
+  get_shortcut_command() {
+    gsettings get "${schema}$1" command 2>/dev/null | python3 -c 'import ast,sys; s=sys.stdin.read().strip(); print(ast.literal_eval(s) if s and s != "''" else "")' 2>/dev/null || true
+  }
 
-  gsettings set "${schema}${continue_path}" name "Continue read aloud"
-  gsettings set "${schema}${continue_path}" command "$bindir/continue-read-selection-tts"
-  gsettings set "${schema}${continue_path}" binding "$continue_binding"
+  can_own_path() {
+    path="$1"
+    command="$2"
+    existing="$(get_shortcut_command "$path")"
+    [ -z "$existing" ] || [ "$existing" = "$command" ]
+  }
 
+  add_paths=()
+  skipped=0
+  if can_own_path "$read_path" "$bindir/read-selection-tts"; then add_paths+=("$read_path"); else echo "Skipping existing non-owned shortcut path: $read_path" >&2; skipped=1; fi
+  if can_own_path "$pause_path" "$bindir/pause-read-selection-tts"; then add_paths+=("$pause_path"); else echo "Skipping existing non-owned shortcut path: $pause_path" >&2; skipped=1; fi
+  if can_own_path "$continue_path" "$bindir/continue-read-selection-tts"; then add_paths+=("$continue_path"); else echo "Skipping existing non-owned shortcut path: $continue_path" >&2; skipped=1; fi
   if [ -n "$stop_binding" ]; then
-    gsettings set "${schema}${stop_path}" name "Stop read aloud"
-    gsettings set "${schema}${stop_path}" command "$bindir/stop-read-selection-tts"
-    gsettings set "${schema}${stop_path}" binding "$stop_binding"
+    if can_own_path "$stop_path" "$bindir/stop-read-selection-tts"; then add_paths+=("$stop_path"); else echo "Skipping existing non-owned shortcut path: $stop_path" >&2; skipped=1; fi
+  else
+    if [ "$(get_shortcut_command "$stop_path")" = "$bindir/stop-read-selection-tts" ]; then
+      current="$(gsettings get org.gnome.settings-daemon.plugins.media-keys custom-keybindings)"
+      new_paths="$(paths="$current" REMOVE_PATHS="$stop_path" python3 - <<'INNERPY'
+import ast, os
+raw = os.environ['paths']
+items = [] if raw.startswith('@as ') else ast.literal_eval(raw)
+remove = set(filter(None, os.environ['REMOVE_PATHS'].split('|')))
+items = [x for x in items if x not in remove]
+print('[' + ', '.join(repr(x) for x in items) + ']' if items else '@as []')
+INNERPY
+)"
+      gsettings set org.gnome.settings-daemon.plugins.media-keys custom-keybindings "$new_paths"
+      gsettings reset "${schema}${stop_path}" name 2>/dev/null || true
+      gsettings reset "${schema}${stop_path}" command 2>/dev/null || true
+      gsettings reset "${schema}${stop_path}" binding 2>/dev/null || true
+    fi
+  fi
+
+  if [ "${#add_paths[@]}" -gt 0 ]; then
+    current="$(gsettings get org.gnome.settings-daemon.plugins.media-keys custom-keybindings)"
+    joined="$(IFS='|'; echo "${add_paths[*]}")"
+    new_paths="$(paths="$current" ADD_PATHS="$joined" python3 - <<'INNERPY'
+import ast, os
+raw = os.environ['paths']
+items = [] if raw.startswith('@as ') else ast.literal_eval(raw)
+for value in filter(None, os.environ['ADD_PATHS'].split('|')):
+    if value not in items:
+        items.append(value)
+print('[' + ', '.join(repr(x) for x in items) + ']')
+INNERPY
+)"
+    gsettings set org.gnome.settings-daemon.plugins.media-keys custom-keybindings "$new_paths"
+  fi
+
+  configure_shortcut() {
+    path="$1"
+    name="$2"
+    command="$3"
+    binding="$4"
+    if can_own_path "$path" "$command"; then
+      gsettings set "${schema}${path}" name "$name"
+      gsettings set "${schema}${path}" command "$command"
+      gsettings set "${schema}${path}" binding "$binding"
+    fi
+  }
+
+  configure_shortcut "$read_path" "Read selected text aloud" "$bindir/read-selection-tts" "$read_binding"
+  configure_shortcut "$pause_path" "Pause read aloud" "$bindir/pause-read-selection-tts" "$pause_binding"
+  configure_shortcut "$continue_path" "Continue read aloud" "$bindir/continue-read-selection-tts" "$continue_binding"
+  if [ -n "$stop_binding" ]; then
+    configure_shortcut "$stop_path" "Stop read aloud" "$bindir/stop-read-selection-tts" "$stop_binding"
+  fi
+
+  if [ "$skipped" -ne 0 ]; then
+    echo "One or more GNOME shortcut paths already belonged to another command; those entries were left unchanged." >&2
   fi
 fi
 
@@ -125,6 +169,9 @@ Use:
   ${pause_binding}     pause
   ${continue_binding}  continue
 
-Log file:
-  /tmp/read-selection-tts.log
+Config file:
+  ${config_file}
+
+Runtime/log directory:
+  \${XDG_RUNTIME_DIR:-/tmp}/read-selection-tts
 MSG
