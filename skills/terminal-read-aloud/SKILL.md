@@ -1,15 +1,17 @@
 ---
 name: terminal-read-aloud
-description: Install and maintain read-selection-tts, a GNOME/Wayland selected-text read-aloud helper using edge-tts, mpv, and keyboard shortcuts.
-tags: [tts, text-to-speech, audio, speech, linux, gnome, wayland, terminal, accessibility, agent-tool]
-platforms: [linux]
-dependencies: [wl-clipboard, mpv, python3, edge-tts]
+description: Read selected or piped text aloud on Ubuntu/GNOME/Wayland using high-quality Microsoft Edge neural TTS voices, with keyboard shortcuts to pause, continue, and stop playback.
+when_to_use: Use when the user wants selected text or piped text read aloud on a Linux GNOME/Wayland desktop, wants to install or manage read-selection-tts, or asks to have text spoken via a command-line pipe.
+user-invocable: true
 ---
 
 # Terminal Read Aloud
 
-Use this skill when the user wants selected terminal or desktop text read aloud
-on Ubuntu/GNOME/Wayland with good voice quality and simple keyboard shortcuts.
+Read selected or piped text aloud on Ubuntu/GNOME/Wayland.
+
+**Requirements:** Ubuntu 22.04+ · GNOME · Wayland · `wl-clipboard` · `mpv` · `pipx` · `python3`
+
+**Privacy:** Selected text is sent to Microsoft's online Edge TTS service. Do not use for secrets or sensitive text.
 
 ## Install
 
@@ -19,36 +21,49 @@ on Ubuntu/GNOME/Wayland with good voice quality and simple keyboard shortcuts.
    printf '%s\n' "$XDG_SESSION_TYPE"
    ```
 
-2. Ensure dependencies are installed:
+2. Install system dependencies:
 
    ```bash
    sudo apt install -y wl-clipboard mpv pipx python3
    pipx install edge-tts
+   echo "$HOME/.local/bin" >> ~/.bashrc && export PATH="$HOME/.local/bin:$PATH"
    ```
 
-3. Clone the repo and run:
+3. Clone the repo and install:
 
    ```bash
+   git clone https://github.com/davidf9999/read-selection-tts.git
+   cd read-selection-tts
    ./install.sh
    ```
 
-## Agent Usage
+## Use
 
-For scripted or agent-triggered speech without touching the Wayland primary selection:
+Select text with the mouse, then press `Ctrl+Alt+R` to hear it read aloud.
+
+| Shortcut | Action |
+|---|---|
+| `Ctrl+Alt+R` | Read selected text |
+| `Ctrl+Alt+S` | Pause |
+| `Ctrl+Alt+C` | Continue |
+
+To add an optional stop shortcut:
+
+```bash
+READ_SELECTION_TTS_STOP_BINDING='<Control><Alt>x' ./install.sh
+```
+
+## Agent / scripted use
+
+Pipe any text directly — no mouse selection needed:
 
 ```bash
 printf 'Hello from an agent\n' | read-selection-tts --stdin
 ```
 
-## Shortcuts
-
-- `Ctrl+Alt+R`: read selected text.
-- `Ctrl+Alt+S`: pause.
-- `Ctrl+Alt+C`: continue.
+This works from any shell, cron job, or AI agent that can run bash on the user's desktop.
 
 ## Debug
-
-Check:
 
 ```bash
 runtime_dir="${XDG_RUNTIME_DIR:+$XDG_RUNTIME_DIR/read-selection-tts}"
@@ -58,7 +73,8 @@ wl-paste --primary
 command -v edge-tts mpv python3 wl-paste
 ```
 
-## Privacy Warning
+## Uninstall
 
-This helper sends selected text to Microsoft's online Edge TTS service via
-`edge-tts`. Do not use it for secrets or sensitive text.
+```bash
+./uninstall.sh
+```
