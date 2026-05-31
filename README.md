@@ -92,6 +92,20 @@ Wayland primary selection:
 printf 'Hello from an agent\n' | read-selection-tts --stdin
 ```
 
+## Optional stop shortcut
+
+By default there is no stop shortcut. To add one:
+
+```bash
+READ_SELECTION_TTS_STOP_BINDING='<Control><Alt>x' ./install.sh
+```
+
+Pressing the read shortcut (`Ctrl+Alt+R`) while audio is playing already replaces the current audio, so a separate stop shortcut is optional.
+
+## Primary selection vs clipboard
+
+This tool reads the **Wayland primary selection** — the text highlighted with the mouse, not the `Ctrl+C` clipboard. In most GNOME/Wayland apps, selecting text with the mouse is enough; you do not need to press `Ctrl+C`.
+
 ## Configuration
 
 Choose a different voice:

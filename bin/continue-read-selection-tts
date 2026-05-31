@@ -1,63 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-export PATH="${PATH:-}:${HOME}/.local/bin:/usr/local/bin:/usr/bin:/bin"
-
-load_config() {
-  config="${READ_SELECTION_TTS_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/read-selection-tts/config}"
-  if [ -r "$config" ]; then
-    config_voice="$(awk -F= '$1 == "READ_SELECTION_TTS_VOICE" {print substr($0, index($0, "=") + 1); exit}' "$config" 2>/dev/null || true)"
-    config_voice="${config_voice%\"}"
-    config_voice="${config_voice#\"}"
-    config_voice="${config_voice%\'}"
-    config_voice="${config_voice#\'}"
-    case "$config_voice" in
-      ''|*[!A-Za-z0-9._-]*) ;;
-      *) READ_SELECTION_TTS_VOICE="${READ_SELECTION_TTS_VOICE:-$config_voice}" ;;
-    esac
-  fi
-}
-
-default_runtime_base() {
-  if [ -n "${READ_SELECTION_TTS_RUNTIME_DIR:-}" ]; then
-    printf '%s\n' "$READ_SELECTION_TTS_RUNTIME_DIR"
-  elif [ -n "${XDG_RUNTIME_DIR:-}" ]; then
-    printf '%s\n' "$XDG_RUNTIME_DIR/read-selection-tts"
-  else
-    printf '/tmp/read-selection-tts-%s\n' "$(id -u)"
-  fi
-}
-
-prepare_runtime() {
-  if [ -e "$runtime_base" ] || [ -L "$runtime_base" ]; then
-    if [ -L "$runtime_base" ] || [ ! -d "$runtime_base" ] || [ ! -O "$runtime_base" ]; then
-      echo "read-selection-tts: unsafe runtime directory: $runtime_base" >&2
-      exit 1
-    fi
-    chmod 700 "$runtime_base"
-  else
-    mkdir -m 700 "$runtime_base"
-  fi
-}
-
-trim_log() {
-  max_bytes="${READ_SELECTION_TTS_LOG_MAX_BYTES:-1048576}"
-  if [ -f "$log" ] && [ "$(wc -c <"$log" 2>/dev/null || echo 0)" -gt "$max_bytes" ]; then
-    mv -f "$log" "$log.old" 2>/dev/null || : >"$log"
-  fi
-}
+lib_file="${READ_SELECTION_TTS_LIB:-$HOME/.local/lib/read-selection-tts/common.sh}"
+if [ ! -f "$lib_file" ] && [ -f "$(dirname "${BASH_SOURCE[0]}")/../lib/common.sh" ]; then
+  lib_file="$(dirname "${BASH_SOURCE[0]}")/../lib/common.sh"
+fi
+# shellcheck source=lib/common.sh
+. "$lib_file"
 
 load_config
 runtime_base="$(default_runtime_base)"
 sock="${READ_SELECTION_TTS_SOCKET:-$runtime_base/mpv.sock}"
 log="${READ_SELECTION_TTS_LOG:-$runtime_base/read-selection-tts.log}"
-
-need() {
-  if ! command -v "$1" >/dev/null 2>&1; then
-    echo "read-selection-tts: $1 is required" >&2
-    exit 127
-  fi
-}
 
 need python3
 prepare_runtime
@@ -69,17 +23,10 @@ trim_log
 } >>"$log"
 
 if [ -S "$sock" ]; then
-  if ! python3 - "$sock" <<'PYIPC' >>"$log" 2>&1
-import socket
-import sys
-
-payload = b'{"command":["set_property","pause",false]}\n'
-with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
-    client.connect(sys.argv[1])
-    client.sendall(payload)
-PYIPC
-  then
+  if ! python3 -c 'import socket, sys; s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM); s.connect(sys.argv[1]); s.sendall(sys.stdin.read().encode())' "$sock" <<<'{"command":["set_property","pause",false]}' >>"$log" 2>&1; then
     echo "continue command failed" >>"$log"
     exit 1
   fi
+else
+  echo "no active mpv socket" >>"$log"
 fi

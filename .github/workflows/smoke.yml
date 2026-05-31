@@ -16,6 +16,6 @@ jobs:
           pipx install edge-tts
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - name: Run ShellCheck
-        run: shellcheck bin/* install.sh uninstall.sh tests/smoke.sh
+        run: shellcheck -x lib/common.sh bin/* install.sh uninstall.sh tests/smoke.sh
       - name: Run smoke tests
         run: ./tests/smoke.sh

@@ -92,9 +92,11 @@ if [ "$install_shortcuts" -eq 1 ]; then
   fi
 fi
 
-mkdir -p "$bindir"
+libdir="$prefix/lib/read-selection-tts"
+mkdir -p "$bindir" "$libdir"
 install -d -m 700 "$config_parent"
 chmod 700 "$config_parent"
+install -m 0644 "$script_dir/lib/common.sh" "$libdir/common.sh"
 install -m 0755 "$script_dir/bin/read-selection-tts" "$bindir/read-selection-tts"
 install -m 0755 "$script_dir/bin/pause-read-selection-tts" "$bindir/pause-read-selection-tts"
 install -m 0755 "$script_dir/bin/continue-read-selection-tts" "$bindir/continue-read-selection-tts"
@@ -223,4 +225,7 @@ Config file:
 
 Runtime/log directory:
   \${XDG_RUNTIME_DIR}/read-selection-tts, or /tmp/read-selection-tts-$(id -u) when XDG_RUNTIME_DIR is unavailable
+
+Library:
+  ${libdir}/common.sh
 MSG

@@ -3,49 +3,12 @@ set -euo pipefail
 
 export PATH="${PATH:-}:${HOME}/.local/bin:/usr/local/bin:/usr/bin:/bin"
 
-load_config() {
-  config="${READ_SELECTION_TTS_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/read-selection-tts/config}"
-  if [ -r "$config" ]; then
-    config_voice="$(awk -F= '$1 == "READ_SELECTION_TTS_VOICE" {print substr($0, index($0, "=") + 1); exit}' "$config" 2>/dev/null || true)"
-    config_voice="${config_voice%\"}"
-    config_voice="${config_voice#\"}"
-    config_voice="${config_voice%\'}"
-    config_voice="${config_voice#\'}"
-    case "$config_voice" in
-      ''|*[!A-Za-z0-9._-]*) ;;
-      *) READ_SELECTION_TTS_VOICE="${READ_SELECTION_TTS_VOICE:-$config_voice}" ;;
-    esac
-  fi
-}
-
-default_runtime_base() {
-  if [ -n "${READ_SELECTION_TTS_RUNTIME_DIR:-}" ]; then
-    printf '%s\n' "$READ_SELECTION_TTS_RUNTIME_DIR"
-  elif [ -n "${XDG_RUNTIME_DIR:-}" ]; then
-    printf '%s\n' "$XDG_RUNTIME_DIR/read-selection-tts"
-  else
-    printf '/tmp/read-selection-tts-%s\n' "$(id -u)"
-  fi
-}
-
-prepare_runtime() {
-  if [ -e "$runtime_base" ] || [ -L "$runtime_base" ]; then
-    if [ -L "$runtime_base" ] || [ ! -d "$runtime_base" ] || [ ! -O "$runtime_base" ]; then
-      echo "read-selection-tts: unsafe runtime directory: $runtime_base" >&2
-      exit 1
-    fi
-    chmod 700 "$runtime_base"
-  else
-    mkdir -m 700 "$runtime_base"
-  fi
-}
-
-trim_log() {
-  max_bytes="${READ_SELECTION_TTS_LOG_MAX_BYTES:-1048576}"
-  if [ -f "$log" ] && [ "$(wc -c <"$log" 2>/dev/null || echo 0)" -gt "$max_bytes" ]; then
-    mv -f "$log" "$log.old" 2>/dev/null || : >"$log"
-  fi
-}
+lib_file="${READ_SELECTION_TTS_LIB:-$HOME/.local/lib/read-selection-tts/common.sh}"
+if [ ! -f "$lib_file" ] && [ -f "$(dirname "${BASH_SOURCE[0]}")/../lib/common.sh" ]; then
+  lib_file="$(dirname "${BASH_SOURCE[0]}")/../lib/common.sh"
+fi
+# shellcheck source=lib/common.sh
+. "$lib_file"
 
 load_config
 voice="${READ_SELECTION_TTS_VOICE:-en-US-AriaNeural}"
@@ -54,6 +17,8 @@ media="${READ_SELECTION_TTS_MEDIA:-$runtime_base/read-selection.mp3}"
 sock="${READ_SELECTION_TTS_SOCKET:-$runtime_base/mpv.sock}"
 pidfile="${READ_SELECTION_TTS_PIDFILE:-$runtime_base/mpv.pid}"
 log="${READ_SELECTION_TTS_LOG:-$runtime_base/read-selection-tts.log}"
+lockfile="$runtime_base/lock"
+
 selection_mode="primary"
 while [ "$#" -gt 0 ]; do
   case "$1" in
@@ -72,16 +37,10 @@ USAGE
   esac
   shift
 done
+
 selection_file="$runtime_base/read-selection.$$.txt"
 media_tmp="$runtime_base/read-selection.$$.mp3"
 edge_log="$runtime_base/edge-tts.$$.log"
-
-need() {
-  if ! command -v "$1" >/dev/null 2>&1; then
-    echo "read-selection-tts: $1 is required" >&2
-    exit 127
-  fi
-}
 
 # shellcheck disable=SC2317
 cleanup_temp() {
@@ -96,23 +55,6 @@ need edge-tts
 need mpv
 prepare_runtime
 trim_log
-
-stop_pid() {
-  pid="$1"
-  [ -n "$pid" ] || return 0
-  case "$pid" in *[!0-9]*) return 0 ;; esac
-  if [ -r "/proc/$pid/comm" ] && [ "$(cat "/proc/$pid/comm" 2>/dev/null || true)" != "mpv" ]; then
-    return 0
-  fi
-  if kill -0 "$pid" 2>/dev/null; then
-    kill -TERM "$pid" 2>/dev/null || true
-    for _ in 1 2 3 4 5; do
-      kill -0 "$pid" 2>/dev/null || return 0
-      sleep 0.1
-    done
-    kill -KILL "$pid" 2>/dev/null || true
-  fi
-}
 
 stop_existing() {
   if [ -s "$pidfile" ]; then
@@ -155,16 +97,22 @@ if ! edge-tts --voice "$voice" --file "$selection_file" --write-media "$media_tm
 fi
 rm -f "$edge_log"
 
-stop_existing
-mv -f "$media_tmp" "$media"
-mpv --no-video --really-quiet --input-ipc-server="$sock" "$media" >>"$log" 2>&1 &
-mpv_pid=$!
-printf '%s\n' "$mpv_pid" >"$pidfile"
-set +e
-wait "$mpv_pid"
-status=$?
-set -e
-if [ -s "$pidfile" ] && [ "$(cat "$pidfile" 2>/dev/null || true)" = "$mpv_pid" ]; then
-  rm -f "$pidfile" "$sock"
-fi
-exit "$status"
+(
+  flock 9
+  stop_existing
+  mv -f "$media_tmp" "$media"
+  mpv --no-video --really-quiet --input-ipc-server="$sock" "$media" 9>&- >>"$log" 2>&1 &
+  mpv_pid=$!
+  printf '%s\n' "$mpv_pid" >"$pidfile"
+  # Release the lock so a second invocation can stop us and start fresh
+  # while we are still waiting for playback to finish.
+  flock -u 9
+  set +e
+  wait "$mpv_pid"
+  wait_status=$?
+  set -e
+  if [ -s "$pidfile" ] && [ "$(cat "$pidfile" 2>/dev/null || true)" = "$mpv_pid" ]; then
+    rm -f "$pidfile" "$sock"
+  fi
+  exit "$wait_status"
+) 9>"$lockfile"

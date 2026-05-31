@@ -46,6 +46,9 @@ rm -f "$bindir/read-selection-tts" \
       "$bindir/pause-read-selection-tts" \
       "$bindir/continue-read-selection-tts" \
       "$bindir/stop-read-selection-tts"
+libdir="$prefix/lib/read-selection-tts"
+rm -f "$libdir/common.sh"
+rmdir "$libdir" 2>/dev/null || true
 
 if command -v gsettings >/dev/null 2>&1 && command -v python3 >/dev/null 2>&1; then
   base="/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings"

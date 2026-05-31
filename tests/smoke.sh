@@ -16,8 +16,8 @@ if grep -q -- "--text" bin/read-selection-tts; then
 fi
 grep -q "input-ipc-server" bin/read-selection-tts
 grep -q -- "--stdin" bin/read-selection-tts
-grep -q "READ_SELECTION_TTS_CONFIG" bin/read-selection-tts
-grep -q "XDG_RUNTIME_DIR.*read-selection-tts" bin/read-selection-tts
+grep -q "READ_SELECTION_TTS_CONFIG" lib/common.sh
+grep -q "XDG_RUNTIME_DIR.*read-selection-tts" lib/common.sh
 grep -q "set_property.*pause.*true" bin/pause-read-selection-tts
 grep -q "set_property.*pause.*false" bin/continue-read-selection-tts
 grep -q "socket.AF_UNIX" bin/pause-read-selection-tts
@@ -100,6 +100,7 @@ test -x "$tmp/prefix/bin/read-selection-tts"
 test -x "$tmp/prefix/bin/pause-read-selection-tts"
 test -x "$tmp/prefix/bin/continue-read-selection-tts"
 test -x "$tmp/prefix/bin/stop-read-selection-tts"
+test -f "$tmp/prefix/lib/read-selection-tts/common.sh"
 test -f "$tmp/config/read-selection-tts/config"
 test "$(stat -c %a "$tmp/config/read-selection-tts/config")" = "600"
 
