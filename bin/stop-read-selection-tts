@@ -9,8 +9,8 @@ load_config() {
     config_voice="$(awk -F= '$1 == "READ_SELECTION_TTS_VOICE" {print substr($0, index($0, "=") + 1); exit}' "$config" 2>/dev/null || true)"
     config_voice="${config_voice%\"}"
     config_voice="${config_voice#\"}"
-    config_voice="${config_voice%'}"
-    config_voice="${config_voice#'}"
+    config_voice="${config_voice%\'}"
+    config_voice="${config_voice#\'}"
     case "$config_voice" in
       ''|*[!A-Za-z0-9._-]*) ;;
       *) READ_SELECTION_TTS_VOICE="${READ_SELECTION_TTS_VOICE:-$config_voice}" ;;

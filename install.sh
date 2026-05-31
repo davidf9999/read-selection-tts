@@ -72,8 +72,8 @@ if [ -z "${voice}" ] && [ -r "$config_file" ]; then
   voice="$(awk -F= '$1 == "READ_SELECTION_TTS_VOICE" {print substr($0, index($0, "=") + 1); exit}' "$config_file" 2>/dev/null || true)"
   voice="${voice%\"}"
   voice="${voice#\"}"
-  voice="${voice%'}"
-  voice="${voice#'}"
+  voice="${voice%\'}"
+  voice="${voice#\'}"
 fi
 case "${voice:-}" in
   ''|*[!A-Za-z0-9._-]*)
