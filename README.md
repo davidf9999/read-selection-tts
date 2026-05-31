@@ -38,13 +38,12 @@ Runtime dependencies:
 - `wl-paste` from `wl-clipboard`
 - `edge-tts` and `edge-playback` from `pipx install edge-tts`
 - `mpv`
-- `nc` from `netcat-openbsd`
 - `gsettings` for GNOME shortcut installation
 
 Install dependencies on Ubuntu:
 
 ```bash
-sudo apt install -y wl-clipboard mpv netcat-openbsd pipx python3
+sudo apt install -y wl-clipboard mpv pipx python3
 pipx install edge-tts
 ```
 
@@ -119,7 +118,7 @@ cat "${XDG_RUNTIME_DIR:-/tmp}/read-selection-tts/read-selection-tts.log"
 If the shortcut fires but no audio plays, verify:
 
 ```bash
-command -v wl-paste edge-tts mpv nc
+command -v wl-paste edge-tts mpv python3
 wl-paste --primary
 tmp="$(mktemp --suffix=.mp3)"
 edge-tts --voice en-US-AriaNeural --text "test" --write-media "$tmp"

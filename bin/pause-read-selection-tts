@@ -40,7 +40,7 @@ need() {
   fi
 }
 
-need nc
+need python3
 prepare_runtime
 trim_log
 
@@ -50,8 +50,16 @@ trim_log
 } >>"$log"
 
 if [ -S "$sock" ]; then
-  if ! printf '{"command":["set_property","pause",true]}
-' | nc -U "$sock" >>"$log" 2>&1; then
+  if ! python3 - "$sock" <<'PYIPC' >>"$log" 2>&1
+import socket
+import sys
+
+payload = b'{"command":["set_property","pause",true]}\n'
+with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
+    client.connect(sys.argv[1])
+    client.sendall(payload)
+PYIPC
+  then
     echo "pause command failed" >>"$log"
     exit 1
   fi

@@ -51,7 +51,6 @@ missing=0
 need wl-paste
 need edge-tts
 need mpv
-need nc
 need python3
 if [ "$install_shortcuts" -eq 1 ]; then
   need gsettings
@@ -60,7 +59,7 @@ if [ "$missing" -ne 0 ]; then
   cat >&2 <<'MSG'
 
 Install dependencies on Ubuntu/GNOME/Wayland:
-  sudo apt install -y wl-clipboard mpv netcat-openbsd pipx python3
+  sudo apt install -y wl-clipboard mpv pipx python3
   pipx install edge-tts
 
 Then rerun ./install.sh.

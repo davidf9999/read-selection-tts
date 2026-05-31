@@ -19,6 +19,12 @@ grep -q "READ_SELECTION_TTS_CONFIG" bin/read-selection-tts
 grep -q "XDG_RUNTIME_DIR.*read-selection-tts" bin/read-selection-tts
 grep -q "set_property.*pause.*true" bin/pause-read-selection-tts
 grep -q "set_property.*pause.*false" bin/continue-read-selection-tts
+grep -q "socket.AF_UNIX" bin/pause-read-selection-tts
+grep -q "socket.AF_UNIX" bin/continue-read-selection-tts
+if grep -R "nc -U\|need nc" bin install.sh README.md skills >/dev/null; then
+  echo "netcat must not be required for mpv IPC" >&2
+  exit 1
+fi
 if grep -R "pkill -f" bin install.sh uninstall.sh >/dev/null; then
   echo "pkill -f must not be used for mpv cleanup" >&2
   exit 1
@@ -33,7 +39,7 @@ trap 'rm -rf "$tmp"' EXIT
 stubdir="$tmp/stubs"
 mkdir -p "$stubdir"
 
-for cmd in wl-paste edge-tts mpv nc; do
+for cmd in wl-paste edge-tts mpv; do
   cat >"$stubdir/$cmd" <<'STUB'
 #!/usr/bin/env bash
 exit 0
@@ -127,6 +133,46 @@ test -f "$foreign/$foreign_key"
 
 test ! -e "$tmp/prefix/bin/read-selection-tts"
 
+
+
+run_ipc_case() {
+  helper="$1"
+  expected="$2"
+  ipc_runtime="$tmp/ipc-${helper}"
+  ipc_sock="$ipc_runtime/mpv.sock"
+  ipc_received="$tmp/${helper}.ipc"
+  mkdir -p "$ipc_runtime"
+  python3 - "$ipc_sock" "$ipc_received" <<'PYIPC' &
+import os
+import socket
+import sys
+
+sock_path, out_path = sys.argv[1:3]
+try:
+    os.unlink(sock_path)
+except FileNotFoundError:
+    pass
+with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as server:
+    server.bind(sock_path)
+    server.listen(1)
+    conn, _ = server.accept()
+    with conn:
+        data = conn.recv(4096)
+    with open(out_path, 'wb') as out:
+        out.write(data)
+PYIPC
+  server_pid="$!"
+  for _ in 1 2 3 4 5 6 7 8 9 10; do
+    [ -S "$ipc_sock" ] && break
+    sleep 0.1
+  done
+  READ_SELECTION_TTS_RUNTIME_DIR="$ipc_runtime" READ_SELECTION_TTS_SOCKET="$ipc_sock" "bin/${helper}-read-selection-tts"
+  wait "$server_pid"
+  grep -q "$expected" "$ipc_received"
+}
+
+run_ipc_case pause '"pause",true'
+run_ipc_case continue '"pause",false'
 
 cat >"$stubdir/wl-paste" <<'STUB'
 #!/usr/bin/env bash

@@ -2,3 +2,5 @@
 *.wav
 *.log
 .DS_Store
+.antigravitycli/
+.claude/
