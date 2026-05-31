@@ -1,5 +1,9 @@
 # read-selection-tts
 
+[![CI](https://github.com/davidf9999/read-selection-tts/actions/workflows/smoke.yml/badge.svg)](https://github.com/davidf9999/read-selection-tts/actions/workflows/smoke.yml)
+![GitHub License](https://img.shields.io/github/license/davidf9999/read-selection-tts)
+![GitHub Repo stars](https://img.shields.io/github/stars/davidf9999/read-selection-tts)
+
 Tiny GNOME/Wayland helper for reading selected text aloud with high-quality
 Edge neural TTS.
 
@@ -33,6 +37,7 @@ VoxFree instead.
 
 - **Single Language/Voice:** The tool uses a single voice configured in `~/.config/read-selection-tts/config`. Reading text in a language different from the configured voice will result in unnatural pronunciation (a strong accent) or playback failure.
 - **Latency on Long Selections:** Since `edge-tts` must generate the entire audio file before `mpv` starts playback, very long selections may take a few seconds before the audio begins.
+- **Clipboard Mode:** Clipboard mode is not implemented yet. The default read shortcut uses the Wayland primary selection; scripts and agents can use `--stdin`.
 
 ## Requirements
 
@@ -126,6 +131,15 @@ List available voices:
 
 ```bash
 edge-tts --list-voices | less
+```
+
+## Development
+
+Run these before committing:
+
+```bash
+shellcheck -x install.sh uninstall.sh bin/* lib/common.sh tests/smoke.sh
+./tests/smoke.sh
 ```
 
 ## Uninstall

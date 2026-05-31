@@ -7,7 +7,7 @@ Use this before making the repository public.
 ```bash
 git status --short
 ./tests/smoke.sh
-shellcheck bin/* install.sh uninstall.sh tests/smoke.sh
+shellcheck -x install.sh uninstall.sh bin/* lib/common.sh tests/smoke.sh
 ```
 
 If `shellcheck` is not installed locally, rely on GitHub Actions after pushing.
@@ -16,12 +16,19 @@ If `shellcheck` is not installed locally, rely on GitHub Actions after pushing.
 
 Suggested repository topics:
 
-- `text-to-speech`
 - `tts`
-- `wayland`
-- `gnome`
+- `text-to-speech`
+- `read-aloud`
 - `linux`
+- `gnome`
+- `wayland`
 - `accessibility`
+- `edge-tts`
+- `mpv`
+- `bash`
+- `wl-clipboard`
+- `primary-selection`
+- `desktop-utility`
 - `developer-tools`
 - `ai-agent-skill`
 - `agent-tool`
