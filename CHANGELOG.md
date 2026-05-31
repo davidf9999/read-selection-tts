@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.2 - 2026-05-31
+
+### Added
+
+- Add `AGENTS.md` for coding agents and contributor context.
+- Add README badges, development commands, and explicit clipboard-mode limitation.
+- Improve skill metadata and publishing guidance for agent and human discovery.
+
 ## 0.1.1 - 2026-05-31
 
 ### Fixed
