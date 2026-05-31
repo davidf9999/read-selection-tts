@@ -15,6 +15,7 @@ if grep -q -- "--text" bin/read-selection-tts; then
   exit 1
 fi
 grep -q "input-ipc-server" bin/read-selection-tts
+grep -q -- "--stdin" bin/read-selection-tts
 grep -q "READ_SELECTION_TTS_CONFIG" bin/read-selection-tts
 grep -q "XDG_RUNTIME_DIR.*read-selection-tts" bin/read-selection-tts
 grep -q "set_property.*pause.*true" bin/pause-read-selection-tts
@@ -241,6 +242,41 @@ if [ -s "$tmp/edge-empty.log" ]; then
   exit 1
 fi
 
+
+
+cat >"$stubdir/wl-paste" <<'STUB'
+#!/usr/bin/env bash
+echo "wl-paste should not run in --stdin mode" >&2
+exit 22
+STUB
+chmod +x "$stubdir/wl-paste"
+cat >"$stubdir/edge-tts" <<'STUB'
+#!/usr/bin/env bash
+set -euo pipefail
+file=""
+out=""
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --text) echo "--text must not be used" >&2; exit 9 ;;
+    --file) file="$2"; shift 2 ;;
+    --write-media) out="$2"; shift 2 ;;
+    *) shift ;;
+  esac
+done
+grep -q 'stdin text for agent' "$file"
+printf 'audio\n' >"$out"
+printf '%s\n' "$*" >>"${STDIN_EDGE_LOG:?}"
+STUB
+chmod +x "$stubdir/edge-tts"
+cat >"$stubdir/mpv" <<'STUB'
+#!/usr/bin/env bash
+exit 0
+STUB
+chmod +x "$stubdir/mpv"
+stdin_runtime="$tmp/stdin-runtime"
+mkdir -p "$stdin_runtime"
+printf 'stdin text for agent\n' | STDIN_EDGE_LOG="$tmp/stdin-edge.log" PATH="$stubdir:$PATH" XDG_RUNTIME_DIR="$stdin_runtime" XDG_CONFIG_HOME="$tmp/config" bin/read-selection-tts --stdin
+test -f "$stdin_runtime/read-selection-tts/read-selection.mp3"
 
 cat >"$stubdir/wl-paste" <<'STUB'
 #!/usr/bin/env bash

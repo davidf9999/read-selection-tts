@@ -54,6 +54,24 @@ media="${READ_SELECTION_TTS_MEDIA:-$runtime_base/read-selection.mp3}"
 sock="${READ_SELECTION_TTS_SOCKET:-$runtime_base/mpv.sock}"
 pidfile="${READ_SELECTION_TTS_PIDFILE:-$runtime_base/mpv.pid}"
 log="${READ_SELECTION_TTS_LOG:-$runtime_base/read-selection-tts.log}"
+selection_mode="primary"
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --stdin) selection_mode="stdin" ;;
+    -h|--help)
+      cat <<'USAGE'
+Usage: read-selection-tts [--stdin]
+
+Read selected Wayland primary-selection text aloud by default.
+Use --stdin to read text from standard input instead, which is useful for
+scripts and agent workflows.
+USAGE
+      exit 0
+      ;;
+    *) echo "read-selection-tts: unknown argument: $1" >&2; exit 2 ;;
+  esac
+  shift
+done
 selection_file="$runtime_base/read-selection.$$.txt"
 media_tmp="$runtime_base/read-selection.$$.mp3"
 edge_log="$runtime_base/edge-tts.$$.log"
@@ -70,7 +88,9 @@ cleanup_temp() {
 }
 trap cleanup_temp EXIT INT TERM
 
-need wl-paste
+if [ "$selection_mode" = "primary" ]; then
+  need wl-paste
+fi
 need edge-tts
 need mpv
 prepare_runtime
@@ -106,11 +126,22 @@ stop_existing() {
   echo "read requested voice=${voice}"
 } >>"$log"
 
-if ! wl-paste --primary >"$selection_file" 2>>"$log"; then
-  echo "wl-paste failed" >>"$log"
-fi
+case "$selection_mode" in
+  primary)
+    if ! wl-paste --primary >"$selection_file" 2>>"$log"; then
+      echo "wl-paste failed" >>"$log"
+    fi
+    ;;
+  stdin)
+    cat >"$selection_file"
+    ;;
+esac
 if [ ! -s "$selection_file" ]; then
-  echo "no primary selection" >>"$log"
+  if [ "$selection_mode" = "primary" ]; then
+    echo "no primary selection" >>"$log"
+  else
+    echo "no stdin text" >>"$log"
+  fi
   exit 0
 fi
 

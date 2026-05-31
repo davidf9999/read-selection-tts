@@ -52,10 +52,11 @@ Make sure `~/.local/bin` is on your `PATH`.
 ## Install
 
 ```bash
-git clone https://github.com/davidf9999/read-selection-tts.git
-cd read-selection-tts
-./install.sh
+git clone https://github.com/davidf9999/read-selection-tts.git && cd read-selection-tts && ./install.sh
 ```
+
+Avoid `curl | bash` installs for this project: the installer copies versioned
+files from the repository and should run from a checked-out release.
 
 Default shortcuts:
 
@@ -78,6 +79,13 @@ Ctrl+Alt+C
 
 Start a new selection with `Ctrl+Alt+R`; it replaces the previous read-aloud
 audio.
+
+Scripted or agent-triggered speech can use standard input instead of the
+Wayland primary selection:
+
+```bash
+printf 'Hello from an agent\n' | read-selection-tts --stdin
+```
 
 ## Configuration
 
@@ -130,6 +138,11 @@ mpv "$tmp"
 If `edge-tts` is not found from a GNOME shortcut but works in your terminal,
 ensure `~/.local/bin` is on `PATH`. The installed scripts set a conservative
 `PATH`, so this should normally work.
+
+## Demo
+
+A short demo GIF or video is planned. The most useful demo is: select terminal
+or document text, press `Ctrl+Alt+R`, then pause/continue with the shortcuts.
 
 ## Alternatives
 

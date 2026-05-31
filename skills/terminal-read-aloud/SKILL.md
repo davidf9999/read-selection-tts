@@ -1,6 +1,9 @@
 ---
 name: terminal-read-aloud
-description: Install and maintain the read-selection-tts helper for GNOME/Wayland selected-text read-aloud using edge-tts, mpv, and keyboard shortcuts.
+description: Install and maintain read-selection-tts, a GNOME/Wayland selected-text read-aloud helper using edge-tts, mpv, and keyboard shortcuts.
+tags: [tts, text-to-speech, audio, speech, linux, gnome, wayland, terminal, accessibility, agent-tool]
+platforms: [linux]
+dependencies: [wl-clipboard, mpv, python3, edge-tts]
 ---
 
 # Terminal Read Aloud
@@ -28,6 +31,14 @@ on Ubuntu/GNOME/Wayland with good voice quality and simple keyboard shortcuts.
    ```bash
    ./install.sh
    ```
+
+## Agent Usage
+
+For scripted or agent-triggered speech without touching the Wayland primary selection:
+
+```bash
+printf 'Hello from an agent\n' | read-selection-tts --stdin
+```
 
 ## Shortcuts
 
