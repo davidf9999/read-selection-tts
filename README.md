@@ -36,7 +36,7 @@ Tested on Ubuntu GNOME Wayland.
 Runtime dependencies:
 
 - `wl-paste` from `wl-clipboard`
-- `edge-tts` and `edge-playback` from `pipx install edge-tts`
+- `edge-tts` from `pipx install edge-tts`
 - `mpv`
 - `gsettings` for GNOME shortcut installation
 
@@ -112,7 +112,9 @@ edge-tts --list-voices | less
 Check the log:
 
 ```bash
-cat "${XDG_RUNTIME_DIR:-/tmp}/read-selection-tts/read-selection-tts.log"
+runtime_dir="${XDG_RUNTIME_DIR:+$XDG_RUNTIME_DIR/read-selection-tts}"
+runtime_dir="${runtime_dir:-/tmp/read-selection-tts-$(id -u)}"
+cat "$runtime_dir/read-selection-tts.log"
 ```
 
 If the shortcut fires but no audio plays, verify:

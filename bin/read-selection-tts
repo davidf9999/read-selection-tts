@@ -18,9 +18,26 @@ load_config() {
   fi
 }
 
+default_runtime_base() {
+  if [ -n "${READ_SELECTION_TTS_RUNTIME_DIR:-}" ]; then
+    printf '%s\n' "$READ_SELECTION_TTS_RUNTIME_DIR"
+  elif [ -n "${XDG_RUNTIME_DIR:-}" ]; then
+    printf '%s\n' "$XDG_RUNTIME_DIR/read-selection-tts"
+  else
+    printf '/tmp/read-selection-tts-%s\n' "$(id -u)"
+  fi
+}
+
 prepare_runtime() {
-  install -d -m 700 "$runtime_base"
-  chmod 700 "$runtime_base"
+  if [ -e "$runtime_base" ] || [ -L "$runtime_base" ]; then
+    if [ -L "$runtime_base" ] || [ ! -d "$runtime_base" ] || [ ! -O "$runtime_base" ]; then
+      echo "read-selection-tts: unsafe runtime directory: $runtime_base" >&2
+      exit 1
+    fi
+    chmod 700 "$runtime_base"
+  else
+    mkdir -m 700 "$runtime_base"
+  fi
 }
 
 trim_log() {
@@ -32,13 +49,14 @@ trim_log() {
 
 load_config
 voice="${READ_SELECTION_TTS_VOICE:-en-US-AriaNeural}"
-runtime_base="${READ_SELECTION_TTS_RUNTIME_DIR:-${XDG_RUNTIME_DIR:-/tmp}/read-selection-tts}"
+runtime_base="$(default_runtime_base)"
 media="${READ_SELECTION_TTS_MEDIA:-$runtime_base/read-selection.mp3}"
 sock="${READ_SELECTION_TTS_SOCKET:-$runtime_base/mpv.sock}"
 pidfile="${READ_SELECTION_TTS_PIDFILE:-$runtime_base/mpv.pid}"
 log="${READ_SELECTION_TTS_LOG:-$runtime_base/read-selection-tts.log}"
 selection_file="$runtime_base/read-selection.$$.txt"
 media_tmp="$runtime_base/read-selection.$$.mp3"
+edge_log="$runtime_base/edge-tts.$$.log"
 
 need() {
   if ! command -v "$1" >/dev/null 2>&1; then
@@ -48,7 +66,7 @@ need() {
 }
 
 cleanup_temp() {
-  rm -f "$selection_file" "$media_tmp"
+  rm -f "$selection_file" "$media_tmp" "$edge_log"
 }
 trap cleanup_temp EXIT INT TERM
 
@@ -99,18 +117,21 @@ fi
 chars="$(wc -m <"$selection_file" 2>/dev/null | tr -d '[:space:]' || echo 0)"
 echo "chars=${chars}" >>"$log"
 rm -f "$media_tmp"
-if ! edge-tts --voice "$voice" --file "$selection_file" --write-media "$media_tmp" >>"$log" 2>&1; then
+if ! edge-tts --voice "$voice" --file "$selection_file" --write-media "$media_tmp" >"$edge_log" 2>&1; then
   echo "edge-tts failed; leaving existing playback unchanged" >>"$log"
   exit 1
 fi
+rm -f "$edge_log"
 
 stop_existing
 mv -f "$media_tmp" "$media"
 mpv --no-video --really-quiet --input-ipc-server="$sock" "$media" >>"$log" 2>&1 &
 mpv_pid=$!
 printf '%s\n' "$mpv_pid" >"$pidfile"
+set +e
 wait "$mpv_pid"
 status=$?
+set -e
 if [ -s "$pidfile" ] && [ "$(cat "$pidfile" 2>/dev/null || true)" = "$mpv_pid" ]; then
   rm -f "$pidfile" "$sock"
 fi

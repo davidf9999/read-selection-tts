@@ -40,7 +40,9 @@ on Ubuntu/GNOME/Wayland with good voice quality and simple keyboard shortcuts.
 Check:
 
 ```bash
-cat "${XDG_RUNTIME_DIR:-/tmp}/read-selection-tts/read-selection-tts.log"
+runtime_dir="${XDG_RUNTIME_DIR:+$XDG_RUNTIME_DIR/read-selection-tts}"
+runtime_dir="${runtime_dir:-/tmp/read-selection-tts-$(id -u)}"
+cat "$runtime_dir/read-selection-tts.log"
 wl-paste --primary
 command -v edge-tts mpv python3 wl-paste
 ```

@@ -29,8 +29,8 @@ if grep -R "pkill -f" bin install.sh uninstall.sh >/dev/null; then
   echo "pkill -f must not be used for mpv cleanup" >&2
   exit 1
 fi
-if grep -RE "/tmp/read-selection-tts(\.|-)" bin install.sh uninstall.sh README.md SECURITY.md docs skills >/dev/null; then
-  echo "fixed /tmp read-selection file paths must not be documented or used" >&2
+if grep -RE "/tmp/read-selection-tts\.(mp3|log)|/tmp/read-selection-tts-mpv" bin install.sh uninstall.sh README.md SECURITY.md docs skills >/dev/null; then
+  echo "fixed shared /tmp read-selection file paths must not be documented or used" >&2
   exit 1
 fi
 
@@ -207,6 +207,7 @@ STUB
 chmod +x "$stubdir/mpv"
 
 runtime="$tmp/runtime"
+mkdir -p "$runtime"
 EDGE_TTS_MOCK_LOG="$tmp/edge.log" MPV_MOCK_LOG="$tmp/mpv.log" \
   PATH="$stubdir:$PATH" XDG_RUNTIME_DIR="$runtime" XDG_CONFIG_HOME="$tmp/config" \
   bin/read-selection-tts
@@ -231,6 +232,7 @@ exit 0
 STUB
 chmod +x "$stubdir/wl-paste"
 : >"$tmp/edge-empty.log"
+mkdir -p "$tmp/empty-runtime"
 EDGE_TTS_MOCK_LOG="$tmp/edge-empty.log" MPV_MOCK_LOG="$tmp/mpv-empty.log" \
   PATH="$stubdir:$PATH" XDG_RUNTIME_DIR="$tmp/empty-runtime" XDG_CONFIG_HOME="$tmp/config" \
   bin/read-selection-tts
@@ -238,5 +240,122 @@ if [ -s "$tmp/edge-empty.log" ]; then
   echo "edge-tts should not run for an empty selection" >&2
   exit 1
 fi
+
+
+cat >"$stubdir/wl-paste" <<'STUB'
+#!/usr/bin/env bash
+printf 'text for failing player\n'
+STUB
+chmod +x "$stubdir/wl-paste"
+cat >"$stubdir/edge-tts" <<'STUB'
+#!/usr/bin/env bash
+set -euo pipefail
+out=""
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --write-media) out="$2"; shift 2 ;;
+    *) shift ;;
+  esac
+done
+printf 'audio\n' >"$out"
+STUB
+chmod +x "$stubdir/edge-tts"
+cat >"$stubdir/mpv" <<'STUB'
+#!/usr/bin/env bash
+exit 42
+STUB
+chmod +x "$stubdir/mpv"
+fail_runtime="$tmp/fail-runtime"
+mkdir -p "$fail_runtime"
+set +e
+PATH="$stubdir:$PATH" XDG_RUNTIME_DIR="$fail_runtime" XDG_CONFIG_HOME="$tmp/config" bin/read-selection-tts
+fail_status="$?"
+set -e
+test "$fail_status" = "42"
+test ! -e "$fail_runtime/read-selection-tts/mpv.pid"
+test ! -e "$fail_runtime/read-selection-tts/mpv.sock"
+
+cat >"$stubdir/kill" <<'STUB'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >>"${KILL_MOCK_LOG:?}"
+exit 0
+STUB
+chmod +x "$stubdir/kill"
+unsafe_runtime="$tmp/unsafe-runtime"
+mkdir -p "$unsafe_runtime/read-selection-tts"
+printf 'not-a-pid\n' >"$unsafe_runtime/read-selection-tts/mpv.pid"
+KILL_MOCK_LOG="$tmp/kill.log" PATH="$stubdir:$PATH" PREFIX="$tmp/no-such-prefix" \
+  READ_SELECTION_TTS_RUNTIME_DIR="$unsafe_runtime/read-selection-tts" XDG_CONFIG_HOME="$tmp/unsafe-config" ./uninstall.sh
+test ! -s "$tmp/kill.log"
+
+
+cat >"$stubdir/wl-paste" <<'STUB'
+#!/usr/bin/env bash
+printf 'voice fallback text\n'
+STUB
+chmod +x "$stubdir/wl-paste"
+cat >"$stubdir/edge-tts" <<'STUB'
+#!/usr/bin/env bash
+set -euo pipefail
+voice=""
+out=""
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --voice) voice="$2"; shift 2 ;;
+    --write-media) out="$2"; shift 2 ;;
+    *) shift ;;
+  esac
+done
+printf '%s\n' "$voice" >"${VOICE_MOCK_LOG:?}"
+printf 'audio\n' >"$out"
+STUB
+chmod +x "$stubdir/edge-tts"
+cat >"$stubdir/mpv" <<'STUB'
+#!/usr/bin/env bash
+exit 0
+STUB
+chmod +x "$stubdir/mpv"
+invalid_config="$tmp/invalid-config/read-selection-tts"
+mkdir -p "$invalid_config" "$tmp/invalid-runtime"
+printf 'READ_SELECTION_TTS_VOICE=bad;touch-owned\n' >"$invalid_config/config"
+VOICE_MOCK_LOG="$tmp/voice.log" PATH="$stubdir:$PATH" XDG_RUNTIME_DIR="$tmp/invalid-runtime" XDG_CONFIG_HOME="$tmp/invalid-config" bin/read-selection-tts
+grep -q '^en-US-AriaNeural$' "$tmp/voice.log"
+
+unsafe_parent="$tmp/unsafe-parent"
+mkdir -p "$unsafe_parent" "$tmp/symlink-target"
+ln -s "$tmp/symlink-target" "$unsafe_parent/read-selection-tts"
+set +e
+PATH="$stubdir:$PATH" XDG_RUNTIME_DIR="$unsafe_parent" XDG_CONFIG_HOME="$tmp/config" bin/read-selection-tts >/"$tmp/unsafe.out" 2>"$tmp/unsafe.err"
+unsafe_status="$?"
+set -e
+test "$unsafe_status" != "0"
+grep -q "unsafe runtime directory" "$tmp/unsafe.err"
+
+cp /bin/sleep "$stubdir/mpv"
+chmod +x "$stubdir/mpv"
+PATH="$stubdir:$PATH" mpv 30 &
+stop_target="$!"
+stop_runtime="$tmp/stop-runtime/read-selection-tts"
+mkdir -p "$stop_runtime"
+printf '%s\n' "$stop_target" >"$stop_runtime/mpv.pid"
+: >"$stop_runtime/mpv.sock"
+READ_SELECTION_TTS_RUNTIME_DIR="$stop_runtime" PATH="$stubdir:$PATH" bin/stop-read-selection-tts
+for _ in 1 2 3 4 5 6 7 8 9 10; do
+  kill -0 "$stop_target" 2>/dev/null || break
+  sleep 0.1
+done
+if kill -0 "$stop_target" 2>/dev/null; then
+  echo "stop helper did not terminate mpv stub" >&2
+  kill "$stop_target" 2>/dev/null || true
+  exit 1
+fi
+test ! -e "$stop_runtime/mpv.pid"
+test ! -e "$stop_runtime/mpv.sock"
+
+rotate_runtime="$tmp/rotate-runtime"
+mkdir -p "$rotate_runtime/read-selection-tts"
+printf '0123456789\n' >"$rotate_runtime/read-selection-tts/read-selection-tts.log"
+READ_SELECTION_TTS_LOG_MAX_BYTES=1 PATH="$stubdir:$PATH" XDG_RUNTIME_DIR="$rotate_runtime" XDG_CONFIG_HOME="$tmp/config" bin/stop-read-selection-tts
+test -f "$rotate_runtime/read-selection-tts/read-selection-tts.log.old"
 
 echo "smoke tests passed"

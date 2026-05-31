@@ -5,19 +5,42 @@ prefix="${PREFIX:-$HOME/.local}"
 bindir="$prefix/bin"
 config_dir="${XDG_CONFIG_HOME:-$HOME/.config}/read-selection-tts"
 config_file="${READ_SELECTION_TTS_CONFIG:-$config_dir/config}"
-runtime_base="${READ_SELECTION_TTS_RUNTIME_DIR:-${XDG_RUNTIME_DIR:-/tmp}/read-selection-tts}"
+if [ -n "${READ_SELECTION_TTS_RUNTIME_DIR:-}" ]; then
+  runtime_base="$READ_SELECTION_TTS_RUNTIME_DIR"
+elif [ -n "${XDG_RUNTIME_DIR:-}" ]; then
+  runtime_base="$XDG_RUNTIME_DIR/read-selection-tts"
+else
+  runtime_base="/tmp/read-selection-tts-$(id -u)"
+fi
 pidfile="${READ_SELECTION_TTS_PIDFILE:-$runtime_base/mpv.pid}"
 sock="${READ_SELECTION_TTS_SOCKET:-$runtime_base/mpv.sock}"
 media="${READ_SELECTION_TTS_MEDIA:-$runtime_base/read-selection.mp3}"
 log="${READ_SELECTION_TTS_LOG:-$runtime_base/read-selection-tts.log}"
 
+stop_pid() {
+  pid="$1"
+  [ -n "$pid" ] || return 0
+  case "$pid" in *[!0-9]*) return 0 ;; esac
+  if [ -r "/proc/$pid/comm" ] && [ "$(cat "/proc/$pid/comm" 2>/dev/null || true)" != "mpv" ]; then
+    return 0
+  fi
+  if kill -0 "$pid" 2>/dev/null; then
+    kill -TERM "$pid" 2>/dev/null || true
+    for _ in 1 2 3 4 5; do
+      kill -0 "$pid" 2>/dev/null || return 0
+      sleep 0.1
+    done
+    kill -KILL "$pid" 2>/dev/null || true
+  fi
+}
+
 if [ -s "$pidfile" ]; then
   pid="$(cat "$pidfile" 2>/dev/null || true)"
-  if [ -n "${pid:-}" ] && kill -0 "$pid" 2>/dev/null; then
-    kill -TERM "$pid" 2>/dev/null || true
-  fi
+  stop_pid "$pid"
 fi
-rm -f "$pidfile" "$sock" "$media" "$log" "$log.old" "$runtime_base"/read-selection.*.txt "$runtime_base"/read-selection.*.mp3
+if [ -d "$runtime_base" ] && [ ! -L "$runtime_base" ] && [ -O "$runtime_base" ]; then
+  rm -f "$pidfile" "$sock" "$media" "$log" "$log.old" "$runtime_base"/read-selection.*.txt "$runtime_base"/read-selection.*.mp3 "$runtime_base"/edge-tts.*.log
+fi
 
 rm -f "$bindir/read-selection-tts" \
       "$bindir/pause-read-selection-tts" \
@@ -29,7 +52,7 @@ if command -v gsettings >/dev/null 2>&1 && command -v python3 >/dev/null 2>&1; t
   schema="org.gnome.settings-daemon.plugins.media-keys.custom-keybinding:"
 
   get_shortcut_command() {
-    gsettings get "${schema}$1" command 2>/dev/null | python3 -c 'import ast,sys; s=sys.stdin.read().strip(); print(ast.literal_eval(s) if s and s != "''" else "")' 2>/dev/null || true
+    gsettings get "${schema}$1" command 2>/dev/null | python3 -c 'import ast,sys; s=sys.stdin.read().strip(); print(ast.literal_eval(s) if s not in ("", "''") else "")' 2>/dev/null || true
   }
 
   remove_paths=()

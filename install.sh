@@ -134,7 +134,7 @@ if [ "$install_shortcuts" -eq 1 ]; then
   schema="org.gnome.settings-daemon.plugins.media-keys.custom-keybinding:"
 
   get_shortcut_command() {
-    gsettings get "${schema}$1" command 2>/dev/null | python3 -c 'import ast,sys; s=sys.stdin.read().strip(); print(ast.literal_eval(s) if s and s != "''" else "")' 2>/dev/null || true
+    gsettings get "${schema}$1" command 2>/dev/null | python3 -c 'import ast,sys; s=sys.stdin.read().strip(); print(ast.literal_eval(s) if s not in ("", "''") else "")' 2>/dev/null || true
   }
 
   can_own_path() {
@@ -222,5 +222,5 @@ Config file:
   ${config_file}
 
 Runtime/log directory:
-  \${XDG_RUNTIME_DIR:-/tmp}/read-selection-tts
+  \${XDG_RUNTIME_DIR}/read-selection-tts, or /tmp/read-selection-tts-$(id -u) when XDG_RUNTIME_DIR is unavailable
 MSG

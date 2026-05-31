@@ -12,7 +12,7 @@ jobs:
       - name: Install minimal test dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y wl-clipboard mpv netcat-openbsd pipx
+          sudo apt-get install -y wl-clipboard mpv pipx python3
           pipx install edge-tts
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - name: Run smoke tests

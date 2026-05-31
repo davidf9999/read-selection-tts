@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+export PATH="${PATH:-}:${HOME}/.local/bin:/usr/local/bin:/usr/bin:/bin"
+
 load_config() {
   config="${READ_SELECTION_TTS_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/read-selection-tts/config}"
   if [ -r "$config" ]; then
@@ -16,9 +18,26 @@ load_config() {
   fi
 }
 
+default_runtime_base() {
+  if [ -n "${READ_SELECTION_TTS_RUNTIME_DIR:-}" ]; then
+    printf '%s\n' "$READ_SELECTION_TTS_RUNTIME_DIR"
+  elif [ -n "${XDG_RUNTIME_DIR:-}" ]; then
+    printf '%s\n' "$XDG_RUNTIME_DIR/read-selection-tts"
+  else
+    printf '/tmp/read-selection-tts-%s\n' "$(id -u)"
+  fi
+}
+
 prepare_runtime() {
-  install -d -m 700 "$runtime_base"
-  chmod 700 "$runtime_base"
+  if [ -e "$runtime_base" ] || [ -L "$runtime_base" ]; then
+    if [ -L "$runtime_base" ] || [ ! -d "$runtime_base" ] || [ ! -O "$runtime_base" ]; then
+      echo "read-selection-tts: unsafe runtime directory: $runtime_base" >&2
+      exit 1
+    fi
+    chmod 700 "$runtime_base"
+  else
+    mkdir -m 700 "$runtime_base"
+  fi
 }
 
 trim_log() {
@@ -29,7 +48,7 @@ trim_log() {
 }
 
 load_config
-runtime_base="${READ_SELECTION_TTS_RUNTIME_DIR:-${XDG_RUNTIME_DIR:-/tmp}/read-selection-tts}"
+runtime_base="$(default_runtime_base)"
 pidfile="${READ_SELECTION_TTS_PIDFILE:-$runtime_base/mpv.pid}"
 sock="${READ_SELECTION_TTS_SOCKET:-$runtime_base/mpv.sock}"
 log="${READ_SELECTION_TTS_LOG:-$runtime_base/read-selection-tts.log}"
