@@ -12,8 +12,10 @@ jobs:
       - name: Install minimal test dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y wl-clipboard mpv pipx python3
+          sudo apt-get install -y wl-clipboard mpv pipx python3 shellcheck
           pipx install edge-tts
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: Run ShellCheck
+        run: shellcheck bin/* install.sh uninstall.sh tests/smoke.sh
       - name: Run smoke tests
         run: ./tests/smoke.sh

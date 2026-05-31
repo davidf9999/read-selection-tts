@@ -2,6 +2,16 @@
 
 Use this before making the repository public.
 
+## Final Local Checks
+
+```bash
+git status --short
+./tests/smoke.sh
+shellcheck bin/* install.sh uninstall.sh tests/smoke.sh
+```
+
+If `shellcheck` is not installed locally, rely on GitHub Actions after pushing.
+
 ## GitHub Metadata
 
 Suggested repository topics:
@@ -27,6 +37,17 @@ Record a short demo showing the actual workflow:
 4. Optionally show `printf 'hello' | read-selection-tts --stdin` for agent/script usage.
 
 GNOME's built-in screen recorder can capture the visual part. Keep the demo under 10 seconds and avoid selecting private text.
+
+## Release
+
+After the repository is public and the launch commit is final:
+
+```bash
+git tag -a v0.1.0 -m "Initial release"
+git push origin v0.1.0
+```
+
+Then create a GitHub release from `v0.1.0` and use `CHANGELOG.md` as the release notes.
 
 ## Announcement Draft
 

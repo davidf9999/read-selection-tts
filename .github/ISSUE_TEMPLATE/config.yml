@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Security and privacy notes
+    url: https://github.com/davidf9999/read-selection-tts/blob/main/SECURITY.md
+    about: Read this before reporting sensitive text or privacy concerns.
