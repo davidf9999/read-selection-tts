@@ -8,6 +8,8 @@ config_file="${READ_SELECTION_TTS_CONFIG:-$config_dir/config}"
 runtime_base="${READ_SELECTION_TTS_RUNTIME_DIR:-${XDG_RUNTIME_DIR:-/tmp}/read-selection-tts}"
 pidfile="${READ_SELECTION_TTS_PIDFILE:-$runtime_base/mpv.pid}"
 sock="${READ_SELECTION_TTS_SOCKET:-$runtime_base/mpv.sock}"
+media="${READ_SELECTION_TTS_MEDIA:-$runtime_base/read-selection.mp3}"
+log="${READ_SELECTION_TTS_LOG:-$runtime_base/read-selection-tts.log}"
 
 if [ -s "$pidfile" ]; then
   pid="$(cat "$pidfile" 2>/dev/null || true)"
@@ -15,7 +17,7 @@ if [ -s "$pidfile" ]; then
     kill -TERM "$pid" 2>/dev/null || true
   fi
 fi
-rm -f "$pidfile" "$sock"
+rm -f "$pidfile" "$sock" "$media" "$log" "$log.old" "$runtime_base"/read-selection.*.txt "$runtime_base"/read-selection.*.mp3
 
 rm -f "$bindir/read-selection-tts" \
       "$bindir/pause-read-selection-tts" \
@@ -41,9 +43,6 @@ if command -v gsettings >/dev/null 2>&1 && command -v python3 >/dev/null 2>&1; t
     command="${spec#*|}"
     if [ "$(get_shortcut_command "$path")" = "$command" ]; then
       remove_paths+=("$path")
-      gsettings reset "${schema}${path}" name 2>/dev/null || true
-      gsettings reset "${schema}${path}" command 2>/dev/null || true
-      gsettings reset "${schema}${path}" binding 2>/dev/null || true
     fi
   done
 
@@ -60,6 +59,11 @@ print('[' + ', '.join(repr(x) for x in items) + ']' if items else '@as []')
 INNERPY
 )"
     gsettings set org.gnome.settings-daemon.plugins.media-keys custom-keybindings "$new_paths"
+    for path in "${remove_paths[@]}"; do
+      gsettings reset "${schema}${path}" name 2>/dev/null || true
+      gsettings reset "${schema}${path}" command 2>/dev/null || true
+      gsettings reset "${schema}${path}" binding 2>/dev/null || true
+    done
   fi
 fi
 

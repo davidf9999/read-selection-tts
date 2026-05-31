@@ -1,29 +1,66 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-config="${READ_SELECTION_TTS_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/read-selection-tts/config}"
-if [ -r "$config" ]; then
-  # shellcheck disable=SC1090
-  . "$config"
-fi
+load_config() {
+  config="${READ_SELECTION_TTS_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/read-selection-tts/config}"
+  if [ -r "$config" ]; then
+    config_voice="$(awk -F= '$1 == "READ_SELECTION_TTS_VOICE" {print substr($0, index($0, "=") + 1); exit}' "$config" 2>/dev/null || true)"
+    config_voice="${config_voice%\"}"
+    config_voice="${config_voice#\"}"
+    config_voice="${config_voice%'}"
+    config_voice="${config_voice#'}"
+    case "$config_voice" in
+      ''|*[!A-Za-z0-9._-]*) ;;
+      *) READ_SELECTION_TTS_VOICE="${READ_SELECTION_TTS_VOICE:-$config_voice}" ;;
+    esac
+  fi
+}
 
+prepare_runtime() {
+  install -d -m 700 "$runtime_base"
+  chmod 700 "$runtime_base"
+}
+
+trim_log() {
+  max_bytes="${READ_SELECTION_TTS_LOG_MAX_BYTES:-1048576}"
+  if [ -f "$log" ] && [ "$(wc -c <"$log" 2>/dev/null || echo 0)" -gt "$max_bytes" ]; then
+    mv -f "$log" "$log.old" 2>/dev/null || : >"$log"
+  fi
+}
+
+load_config
 runtime_base="${READ_SELECTION_TTS_RUNTIME_DIR:-${XDG_RUNTIME_DIR:-/tmp}/read-selection-tts}"
 pidfile="${READ_SELECTION_TTS_PIDFILE:-$runtime_base/mpv.pid}"
 sock="${READ_SELECTION_TTS_SOCKET:-$runtime_base/mpv.sock}"
 log="${READ_SELECTION_TTS_LOG:-$runtime_base/read-selection-tts.log}"
 
-mkdir -p "$runtime_base"
-chmod 700 "$runtime_base"
+prepare_runtime
+trim_log
 
 {
   date
   echo "stop requested"
 } >>"$log"
 
+stop_pid() {
+  pid="$1"
+  [ -n "$pid" ] || return 0
+  case "$pid" in *[!0-9]*) return 0 ;; esac
+  if [ -r "/proc/$pid/comm" ] && [ "$(cat "/proc/$pid/comm" 2>/dev/null || true)" != "mpv" ]; then
+    return 0
+  fi
+  if kill -0 "$pid" 2>/dev/null; then
+    kill -TERM "$pid" 2>/dev/null || true
+    for _ in 1 2 3 4 5; do
+      kill -0 "$pid" 2>/dev/null || break
+      sleep 0.1
+    done
+    kill -KILL "$pid" 2>/dev/null || true
+  fi
+}
+
 if [ -s "$pidfile" ]; then
   pid="$(cat "$pidfile" 2>/dev/null || true)"
-  if [ -n "${pid:-}" ] && kill -0 "$pid" 2>/dev/null; then
-    kill -TERM "$pid" 2>/dev/null || true
-  fi
+  stop_pid "$pid"
 fi
 rm -f "$pidfile" "$sock"

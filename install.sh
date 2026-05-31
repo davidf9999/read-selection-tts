@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 prefix="${PREFIX:-$HOME/.local}"
 bindir="$prefix/bin"
 config_dir="${XDG_CONFIG_HOME:-$HOME/.config}/read-selection-tts"
 config_file="${READ_SELECTION_TTS_CONFIG:-$config_dir/config}"
-voice="${READ_SELECTION_TTS_VOICE:-en-US-AriaNeural}"
+voice_from_env="${READ_SELECTION_TTS_VOICE+x}"
+voice="${READ_SELECTION_TTS_VOICE:-}"
 read_binding="${READ_SELECTION_TTS_READ_BINDING:-<Control><Alt>r}"
 pause_binding="${READ_SELECTION_TTS_PAUSE_BINDING:-<Control><Alt>s}"
 continue_binding="${READ_SELECTION_TTS_CONTINUE_BINDING:-<Control><Alt>c}"
@@ -24,7 +26,7 @@ registers GNOME custom keyboard shortcuts:
 
 Optional environment:
   PREFIX=/path                  install prefix (default: ~/.local)
-  READ_SELECTION_TTS_VOICE=...  edge-tts voice (default: ${voice})
+  READ_SELECTION_TTS_VOICE=...  edge-tts voice (default: existing config or en-US-AriaNeural)
   READ_SELECTION_TTS_*_BINDING  override GNOME shortcut bindings
 USAGE
 }
@@ -67,14 +69,62 @@ MSG
 fi
 
 config_parent="$(dirname "$config_file")"
-mkdir -p "$bindir" "$config_parent"
+if [ -z "${voice}" ] && [ -r "$config_file" ]; then
+  voice="$(awk -F= '$1 == "READ_SELECTION_TTS_VOICE" {print substr($0, index($0, "=") + 1); exit}' "$config_file" 2>/dev/null || true)"
+  voice="${voice%\"}"
+  voice="${voice#\"}"
+  voice="${voice%'}"
+  voice="${voice#'}"
+fi
+case "${voice:-}" in
+  ''|*[!A-Za-z0-9._-]*)
+    if [ -n "$voice_from_env" ]; then
+      echo "Invalid READ_SELECTION_TTS_VOICE: ${voice}" >&2
+      exit 2
+    fi
+    voice="en-US-AriaNeural"
+    ;;
+esac
+
+if [ "$install_shortcuts" -eq 1 ]; then
+  if ! gsettings get org.gnome.settings-daemon.plugins.media-keys custom-keybindings >/dev/null 2>&1; then
+    echo "Cannot access GNOME settings. Run install from your graphical GNOME desktop session, not under sudo or a headless shell." >&2
+    exit 1
+  fi
+fi
+
+mkdir -p "$bindir"
+install -d -m 700 "$config_parent"
 chmod 700 "$config_parent"
-install -m 0755 bin/read-selection-tts "$bindir/read-selection-tts"
-install -m 0755 bin/pause-read-selection-tts "$bindir/pause-read-selection-tts"
-install -m 0755 bin/continue-read-selection-tts "$bindir/continue-read-selection-tts"
-install -m 0755 bin/stop-read-selection-tts "$bindir/stop-read-selection-tts"
-install -m 0600 /dev/null "$config_file"
-printf 'READ_SELECTION_TTS_VOICE=%q\n' "$voice" >"$config_file"
+install -m 0755 "$script_dir/bin/read-selection-tts" "$bindir/read-selection-tts"
+install -m 0755 "$script_dir/bin/pause-read-selection-tts" "$bindir/pause-read-selection-tts"
+install -m 0755 "$script_dir/bin/continue-read-selection-tts" "$bindir/continue-read-selection-tts"
+install -m 0755 "$script_dir/bin/stop-read-selection-tts" "$bindir/stop-read-selection-tts"
+
+config_tmp="$(mktemp "${config_parent}/config.XXXXXX")"
+python3 - "$config_file" "$config_tmp" "$voice" <<'INNERPY'
+from pathlib import Path
+import shlex
+import sys
+src = Path(sys.argv[1])
+dst = Path(sys.argv[2])
+voice = sys.argv[3]
+lines = src.read_text().splitlines() if src.exists() else []
+out = []
+seen = False
+for line in lines:
+    if line.startswith('READ_SELECTION_TTS_VOICE='):
+        if not seen:
+            out.append('READ_SELECTION_TTS_VOICE=' + shlex.quote(voice))
+            seen = True
+    else:
+        out.append(line)
+if not seen:
+    out.append('READ_SELECTION_TTS_VOICE=' + shlex.quote(voice))
+dst.write_text('\n'.join(out) + '\n')
+INNERPY
+chmod 600 "$config_tmp"
+mv -f "$config_tmp" "$config_file"
 
 if [ "$install_shortcuts" -eq 1 ]; then
   base="/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings"

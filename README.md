@@ -88,7 +88,7 @@ Choose a different voice:
 READ_SELECTION_TTS_VOICE=en-GB-SoniaNeural ./install.sh
 ```
 
-The selected voice is persisted in `~/.config/read-selection-tts/config`, so GNOME shortcuts use it after the installing terminal closes.
+The selected voice is persisted in `~/.config/read-selection-tts/config`, so GNOME shortcuts use it after the installing terminal closes. Reinstalling without `READ_SELECTION_TTS_VOICE` preserves the existing voice and any other config lines.
 
 Override shortcut bindings:
 

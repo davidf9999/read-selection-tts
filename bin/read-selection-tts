@@ -1,20 +1,44 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-export PATH="${HOME}/.local/bin:/usr/local/bin:/usr/bin:/bin:${PATH:-}"
+export PATH="${PATH:-}:${HOME}/.local/bin:/usr/local/bin:/usr/bin:/bin"
 
-config="${READ_SELECTION_TTS_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/read-selection-tts/config}"
-if [ -r "$config" ]; then
-  # shellcheck disable=SC1090
-  . "$config"
-fi
+load_config() {
+  config="${READ_SELECTION_TTS_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/read-selection-tts/config}"
+  if [ -r "$config" ]; then
+    config_voice="$(awk -F= '$1 == "READ_SELECTION_TTS_VOICE" {print substr($0, index($0, "=") + 1); exit}' "$config" 2>/dev/null || true)"
+    config_voice="${config_voice%\"}"
+    config_voice="${config_voice#\"}"
+    config_voice="${config_voice%'}"
+    config_voice="${config_voice#'}"
+    case "$config_voice" in
+      ''|*[!A-Za-z0-9._-]*) ;;
+      *) READ_SELECTION_TTS_VOICE="${READ_SELECTION_TTS_VOICE:-$config_voice}" ;;
+    esac
+  fi
+}
 
+prepare_runtime() {
+  install -d -m 700 "$runtime_base"
+  chmod 700 "$runtime_base"
+}
+
+trim_log() {
+  max_bytes="${READ_SELECTION_TTS_LOG_MAX_BYTES:-1048576}"
+  if [ -f "$log" ] && [ "$(wc -c <"$log" 2>/dev/null || echo 0)" -gt "$max_bytes" ]; then
+    mv -f "$log" "$log.old" 2>/dev/null || : >"$log"
+  fi
+}
+
+load_config
 voice="${READ_SELECTION_TTS_VOICE:-en-US-AriaNeural}"
 runtime_base="${READ_SELECTION_TTS_RUNTIME_DIR:-${XDG_RUNTIME_DIR:-/tmp}/read-selection-tts}"
 media="${READ_SELECTION_TTS_MEDIA:-$runtime_base/read-selection.mp3}"
 sock="${READ_SELECTION_TTS_SOCKET:-$runtime_base/mpv.sock}"
 pidfile="${READ_SELECTION_TTS_PIDFILE:-$runtime_base/mpv.pid}"
 log="${READ_SELECTION_TTS_LOG:-$runtime_base/read-selection-tts.log}"
+selection_file="$runtime_base/read-selection.$$.txt"
+media_tmp="$runtime_base/read-selection.$$.mp3"
 
 need() {
   if ! command -v "$1" >/dev/null 2>&1; then
@@ -23,24 +47,38 @@ need() {
   fi
 }
 
+cleanup_temp() {
+  rm -f "$selection_file" "$media_tmp"
+}
+trap cleanup_temp EXIT INT TERM
+
 need wl-paste
 need edge-tts
 need mpv
+prepare_runtime
+trim_log
 
-mkdir -p "$runtime_base"
-chmod 700 "$runtime_base"
+stop_pid() {
+  pid="$1"
+  [ -n "$pid" ] || return 0
+  case "$pid" in *[!0-9]*) return 0 ;; esac
+  if [ -r "/proc/$pid/comm" ] && [ "$(cat "/proc/$pid/comm" 2>/dev/null || true)" != "mpv" ]; then
+    return 0
+  fi
+  if kill -0 "$pid" 2>/dev/null; then
+    kill -TERM "$pid" 2>/dev/null || true
+    for _ in 1 2 3 4 5; do
+      kill -0 "$pid" 2>/dev/null || return 0
+      sleep 0.1
+    done
+    kill -KILL "$pid" 2>/dev/null || true
+  fi
+}
 
 stop_existing() {
   if [ -s "$pidfile" ]; then
     old_pid="$(cat "$pidfile" 2>/dev/null || true)"
-    if [ -n "${old_pid:-}" ] && kill -0 "$old_pid" 2>/dev/null; then
-      kill -TERM "$old_pid" 2>/dev/null || true
-      for _ in 1 2 3 4 5; do
-        kill -0 "$old_pid" 2>/dev/null || break
-        sleep 0.1
-      done
-      kill -KILL "$old_pid" 2>/dev/null || true
-    fi
+    stop_pid "$old_pid"
   fi
   rm -f "$pidfile" "$sock"
 }
@@ -50,21 +88,30 @@ stop_existing() {
   echo "read requested voice=${voice}"
 } >>"$log"
 
-text="$(wl-paste --primary 2>>"$log" || true)"
-if [ -z "$text" ]; then
+if ! wl-paste --primary >"$selection_file" 2>>"$log"; then
+  echo "wl-paste failed" >>"$log"
+fi
+if [ ! -s "$selection_file" ]; then
   echo "no primary selection" >>"$log"
   exit 0
 fi
 
-echo "chars=${#text}" >>"$log"
-stop_existing
-rm -f "$media"
+chars="$(wc -m <"$selection_file" 2>/dev/null | tr -d '[:space:]' || echo 0)"
+echo "chars=${chars}" >>"$log"
+rm -f "$media_tmp"
+if ! edge-tts --voice "$voice" --file "$selection_file" --write-media "$media_tmp" >>"$log" 2>&1; then
+  echo "edge-tts failed; leaving existing playback unchanged" >>"$log"
+  exit 1
+fi
 
-edge-tts --voice "$voice" --text "$text" --write-media "$media" >>"$log" 2>&1
+stop_existing
+mv -f "$media_tmp" "$media"
 mpv --no-video --really-quiet --input-ipc-server="$sock" "$media" >>"$log" 2>&1 &
 mpv_pid=$!
 printf '%s\n' "$mpv_pid" >"$pidfile"
 wait "$mpv_pid"
 status=$?
-rm -f "$pidfile" "$sock"
+if [ -s "$pidfile" ] && [ "$(cat "$pidfile" 2>/dev/null || true)" = "$mpv_pid" ]; then
+  rm -f "$pidfile" "$sock"
+fi
 exit "$status"

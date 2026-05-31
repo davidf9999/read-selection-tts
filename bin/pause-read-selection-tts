@@ -1,18 +1,48 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-config="${READ_SELECTION_TTS_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/read-selection-tts/config}"
-if [ -r "$config" ]; then
-  # shellcheck disable=SC1090
-  . "$config"
-fi
+load_config() {
+  config="${READ_SELECTION_TTS_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/read-selection-tts/config}"
+  if [ -r "$config" ]; then
+    config_voice="$(awk -F= '$1 == "READ_SELECTION_TTS_VOICE" {print substr($0, index($0, "=") + 1); exit}' "$config" 2>/dev/null || true)"
+    config_voice="${config_voice%\"}"
+    config_voice="${config_voice#\"}"
+    config_voice="${config_voice%'}"
+    config_voice="${config_voice#'}"
+    case "$config_voice" in
+      ''|*[!A-Za-z0-9._-]*) ;;
+      *) READ_SELECTION_TTS_VOICE="${READ_SELECTION_TTS_VOICE:-$config_voice}" ;;
+    esac
+  fi
+}
 
+prepare_runtime() {
+  install -d -m 700 "$runtime_base"
+  chmod 700 "$runtime_base"
+}
+
+trim_log() {
+  max_bytes="${READ_SELECTION_TTS_LOG_MAX_BYTES:-1048576}"
+  if [ -f "$log" ] && [ "$(wc -c <"$log" 2>/dev/null || echo 0)" -gt "$max_bytes" ]; then
+    mv -f "$log" "$log.old" 2>/dev/null || : >"$log"
+  fi
+}
+
+load_config
 runtime_base="${READ_SELECTION_TTS_RUNTIME_DIR:-${XDG_RUNTIME_DIR:-/tmp}/read-selection-tts}"
 sock="${READ_SELECTION_TTS_SOCKET:-$runtime_base/mpv.sock}"
 log="${READ_SELECTION_TTS_LOG:-$runtime_base/read-selection-tts.log}"
 
-mkdir -p "$runtime_base"
-chmod 700 "$runtime_base"
+need() {
+  if ! command -v "$1" >/dev/null 2>&1; then
+    echo "read-selection-tts: $1 is required" >&2
+    exit 127
+  fi
+}
+
+need nc
+prepare_runtime
+trim_log
 
 {
   date
@@ -20,5 +50,9 @@ chmod 700 "$runtime_base"
 } >>"$log"
 
 if [ -S "$sock" ]; then
-  printf '{"command":["set_property","pause",true]}\n' | nc -U "$sock" >>"$log" 2>&1 || true
+  if ! printf '{"command":["set_property","pause",true]}
+' | nc -U "$sock" >>"$log" 2>&1; then
+    echo "pause command failed" >>"$log"
+    exit 1
+  fi
 fi

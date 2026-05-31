@@ -9,6 +9,11 @@ for file in bin/* install.sh uninstall.sh; do
 done
 
 grep -q "edge-tts" bin/read-selection-tts
+grep -q -- "--file" bin/read-selection-tts
+if grep -q -- "--text" bin/read-selection-tts; then
+  echo "selected text must not be passed via process arguments" >&2
+  exit 1
+fi
 grep -q "input-ipc-server" bin/read-selection-tts
 grep -q "READ_SELECTION_TTS_CONFIG" bin/read-selection-tts
 grep -q "XDG_RUNTIME_DIR.*read-selection-tts" bin/read-selection-tts
@@ -89,17 +94,21 @@ test -x "$tmp/prefix/bin/pause-read-selection-tts"
 test -x "$tmp/prefix/bin/continue-read-selection-tts"
 test -x "$tmp/prefix/bin/stop-read-selection-tts"
 test -f "$tmp/config/read-selection-tts/config"
+test "$(stat -c %a "$tmp/config/read-selection-tts/config")" = "600"
 
 GSETTINGS_MOCK_STATE="$tmp/gsettings-state" GSETTINGS_MOCK_LOG="$tmp/gsettings.log" \
   PATH="$stubdir:$PATH" PREFIX="$tmp/prefix" XDG_CONFIG_HOME="$tmp/config" \
   READ_SELECTION_TTS_VOICE="en-GB-SoniaNeural" READ_SELECTION_TTS_STOP_BINDING="<Control><Alt>x" ./install.sh
 
 grep -q "READ_SELECTION_TTS_VOICE=en-GB-SoniaNeural" "$tmp/config/read-selection-tts/config"
+printf 'READ_SELECTION_TTS_RATE=+5%%\n' >>"$tmp/config/read-selection-tts/config"
 grep -q "read-selection-tts/" "$tmp/gsettings-state/custom-keybindings"
 grep -q "stop-read-selection-tts/" "$tmp/gsettings-state/custom-keybindings"
 
 GSETTINGS_MOCK_STATE="$tmp/gsettings-state" GSETTINGS_MOCK_LOG="$tmp/gsettings.log" \
   PATH="$stubdir:$PATH" PREFIX="$tmp/prefix" XDG_CONFIG_HOME="$tmp/config" ./install.sh
+grep -q "READ_SELECTION_TTS_VOICE=en-GB-SoniaNeural" "$tmp/config/read-selection-tts/config"
+grep -q "READ_SELECTION_TTS_RATE=+5%" "$tmp/config/read-selection-tts/config"
 if grep -q "stop-read-selection-tts/" "$tmp/gsettings-state/custom-keybindings"; then
   echo "stale stop shortcut was not removed on reinstall without stop binding" >&2
   exit 1
@@ -117,5 +126,71 @@ grep -q "read-selection-tts/" "$foreign/custom-keybindings"
 test -f "$foreign/$foreign_key"
 
 test ! -e "$tmp/prefix/bin/read-selection-tts"
+
+
+cat >"$stubdir/wl-paste" <<'STUB'
+#!/usr/bin/env bash
+printf 'private selected text\n'
+STUB
+chmod +x "$stubdir/wl-paste"
+
+cat >"$stubdir/edge-tts" <<'STUB'
+#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "$*" >>"${EDGE_TTS_MOCK_LOG:?}"
+file=""
+out=""
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --text) echo "--text must not be used" >&2; exit 9 ;;
+    --file) file="$2"; shift 2 ;;
+    --write-media) out="$2"; shift 2 ;;
+    *) shift ;;
+  esac
+done
+test -s "$file"
+printf 'audio from %s\n' "$file" >"$out"
+STUB
+chmod +x "$stubdir/edge-tts"
+
+cat >"$stubdir/mpv" <<'STUB'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >>"${MPV_MOCK_LOG:?}"
+sleep 0.1
+STUB
+chmod +x "$stubdir/mpv"
+
+runtime="$tmp/runtime"
+EDGE_TTS_MOCK_LOG="$tmp/edge.log" MPV_MOCK_LOG="$tmp/mpv.log" \
+  PATH="$stubdir:$PATH" XDG_RUNTIME_DIR="$runtime" XDG_CONFIG_HOME="$tmp/config" \
+  bin/read-selection-tts
+
+test "$(stat -c %a "$runtime/read-selection-tts")" = "700"
+test -f "$runtime/read-selection-tts/read-selection.mp3"
+test ! -e "$runtime/read-selection-tts/mpv.pid"
+test ! -e "$runtime/read-selection-tts/mpv.sock"
+if ls "$runtime/read-selection-tts"/read-selection.*.txt >/dev/null 2>&1; then
+  echo "selection temp file was not cleaned up" >&2
+  exit 1
+fi
+grep -q -- "--file" "$tmp/edge.log"
+if grep -q "private selected text" "$tmp/edge.log"; then
+  echo "selected text leaked into edge-tts argv log" >&2
+  exit 1
+fi
+
+cat >"$stubdir/wl-paste" <<'STUB'
+#!/usr/bin/env bash
+exit 0
+STUB
+chmod +x "$stubdir/wl-paste"
+: >"$tmp/edge-empty.log"
+EDGE_TTS_MOCK_LOG="$tmp/edge-empty.log" MPV_MOCK_LOG="$tmp/mpv-empty.log" \
+  PATH="$stubdir:$PATH" XDG_RUNTIME_DIR="$tmp/empty-runtime" XDG_CONFIG_HOME="$tmp/config" \
+  bin/read-selection-tts
+if [ -s "$tmp/edge-empty.log" ]; then
+  echo "edge-tts should not run for an empty selection" >&2
+  exit 1
+fi
 
 echo "smoke tests passed"
