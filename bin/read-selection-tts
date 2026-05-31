@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+export PATH="${HOME}/.local/bin:/usr/local/bin:/usr/bin:/bin:${PATH:-}"
+
+voice="${READ_SELECTION_TTS_VOICE:-en-US-AriaNeural}"
+media="${READ_SELECTION_TTS_MEDIA:-/tmp/read-selection-tts.mp3}"
+sock="${READ_SELECTION_TTS_SOCKET:-/tmp/read-selection-tts-mpv.sock}"
+log="${READ_SELECTION_TTS_LOG:-/tmp/read-selection-tts.log}"
+
+if ! command -v wl-paste >/dev/null 2>&1; then
+  echo "read-selection-tts: wl-paste is required" >&2
+  exit 127
+fi
+if ! command -v edge-tts >/dev/null 2>&1; then
+  echo "read-selection-tts: edge-tts is required" >&2
+  exit 127
+fi
+if ! command -v mpv >/dev/null 2>&1; then
+  echo "read-selection-tts: mpv is required" >&2
+  exit 127
+fi
+
+{
+  date
+  echo "read requested voice=${voice}"
+} >>"$log"
+
+text="$(wl-paste --primary 2>>"$log" || true)"
+if [ -z "$text" ]; then
+  echo "no primary selection" >>"$log"
+  exit 0
+fi
+
+echo "chars=${#text}" >>"$log"
+pkill -TERM -f "mpv.*${sock}" 2>/dev/null || true
+rm -f "$media" "$sock"
+
+edge-tts --voice "$voice" --text "$text" --write-media "$media" >>"$log" 2>&1
+exec mpv --no-video --really-quiet --input-ipc-server="$sock" "$media" >>"$log" 2>&1

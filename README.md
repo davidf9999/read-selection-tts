@@ -1,0 +1,138 @@
+# read-selection-tts
+
+Tiny GNOME/Wayland helper for reading selected text aloud with high-quality
+Edge neural TTS.
+
+It is intentionally not a screen reader. It does one narrow thing:
+
+1. Select text anywhere that populates the Wayland primary selection.
+2. Press `Ctrl+Alt+R` to read it aloud.
+3. Press `Ctrl+Alt+S` to pause.
+4. Press `Ctrl+Alt+C` to continue.
+
+## Why
+
+Linux already has screen readers, browser read-aloud extensions, and local TTS
+engines. This project exists for a narrower workflow:
+
+- better voice quality than `spd-say`/eSpeak on many systems;
+- less intrusive than Orca when you only want selected text read aloud;
+- works with terminal selections and other GNOME/Wayland primary selections;
+- pause/resume shortcuts without adopting a full accessibility stack.
+
+## Privacy
+
+This uses [`edge-tts`](https://pypi.org/project/edge-tts/), which sends the
+selected text to Microsoft's online speech service. Do not use it for secrets,
+private documents, credentials, or sensitive personal information.
+
+If you need offline speech, look at Piper/Mimic3-based tools such as Voluble or
+VoxFree instead.
+
+## Requirements
+
+Tested on Ubuntu GNOME Wayland.
+
+Runtime dependencies:
+
+- `wl-paste` from `wl-clipboard`
+- `edge-tts` and `edge-playback` from `pipx install edge-tts`
+- `mpv`
+- `nc` from `netcat-openbsd`
+- `gsettings` for GNOME shortcut installation
+
+Install dependencies on Ubuntu:
+
+```bash
+sudo apt install -y wl-clipboard mpv netcat-openbsd pipx
+pipx install edge-tts
+```
+
+Make sure `~/.local/bin` is on your `PATH`.
+
+## Install
+
+```bash
+git clone https://github.com/davidf9999/read-selection-tts.git
+cd read-selection-tts
+./install.sh
+```
+
+Default shortcuts:
+
+- `Ctrl+Alt+R`: read selected text
+- `Ctrl+Alt+S`: pause
+- `Ctrl+Alt+C`: continue
+
+The installer preserves existing GNOME custom shortcuts and appends its own.
+
+## Use
+
+Select text with the mouse, then press `Ctrl+Alt+R`.
+
+Pause and continue:
+
+```text
+Ctrl+Alt+S
+Ctrl+Alt+C
+```
+
+Start a new selection with `Ctrl+Alt+R`; it replaces the previous read-aloud
+audio.
+
+## Configuration
+
+Choose a different voice:
+
+```bash
+READ_SELECTION_TTS_VOICE=en-GB-SoniaNeural ./install.sh
+```
+
+Override shortcut bindings:
+
+```bash
+READ_SELECTION_TTS_READ_BINDING='<Super><Alt>r' ./install.sh
+```
+
+List available voices:
+
+```bash
+edge-tts --list-voices | less
+```
+
+## Uninstall
+
+```bash
+./uninstall.sh
+```
+
+## Troubleshooting
+
+Check the log:
+
+```bash
+cat /tmp/read-selection-tts.log
+```
+
+If the shortcut fires but no audio plays, verify:
+
+```bash
+command -v wl-paste edge-tts mpv nc
+wl-paste --primary
+edge-tts --voice en-US-AriaNeural --text "test" --write-media /tmp/test.mp3
+mpv /tmp/test.mp3
+```
+
+If `edge-tts` is not found from a GNOME shortcut but works in your terminal,
+ensure `~/.local/bin` is on `PATH`. The installed scripts set a conservative
+`PATH`, so this should normally work.
+
+## Alternatives
+
+- Orca: full GNOME screen reader. Better for complete UI accessibility, more
+  intrusive for casual selected-text reading.
+- Voluble: GNOME extension using Piper; closer to this project and worth trying
+  if you want offline speech.
+- VoxFree: offline Ubuntu/GNOME voice toolkit.
+- Browser extensions: excellent inside browsers, not a general terminal/system
+  selected-text workflow.

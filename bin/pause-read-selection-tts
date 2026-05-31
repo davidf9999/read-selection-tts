@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+sock="${READ_SELECTION_TTS_SOCKET:-/tmp/read-selection-tts-mpv.sock}"
+log="${READ_SELECTION_TTS_LOG:-/tmp/read-selection-tts.log}"
+
+{
+  date
+  echo "pause requested"
+} >>"$log"
+
+if [ -S "$sock" ]; then
+  printf '{"command":["set_property","pause",true]}\n' | nc -U "$sock" >>"$log" 2>&1 || true
+fi

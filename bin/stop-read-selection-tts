@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+sock="${READ_SELECTION_TTS_SOCKET:-/tmp/read-selection-tts-mpv.sock}"
+log="${READ_SELECTION_TTS_LOG:-/tmp/read-selection-tts.log}"
+
+{
+  date
+  echo "stop requested"
+} >>"$log"
+
+pkill -TERM -f "mpv.*${sock}" 2>/dev/null || true
